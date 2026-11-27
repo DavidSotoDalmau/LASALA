@@ -325,3 +325,8 @@ input[type="text"]:focus-visible, select:focus-visible { border-color: var(--foc
 .log:empty::before { content: "Aún no ha pasado nada."; color: var(--muted); margin-left: -1.3em; }
 .answer-box { margin-top: 10px; }
 .role-tag { font-size: 0.8rem; font-weight: 600; color: var(--muted); }
+
+/* Corrección: botones de dial dentro de su tarjeta */
+.dial-card { min-width: 0; overflow: hidden; }
+.dial-btns { flex-direction: column; align-items: stretch; }
+.dial-btns .btn { width: 100%; min-width: 0; }

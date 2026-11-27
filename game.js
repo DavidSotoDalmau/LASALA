@@ -625,7 +625,7 @@ function hostSendRejected(id, reason) {
 }
 
 function hostSendViews(id) {
-  if (!amHost() || !H || G.phase !== 'playing' || !H.type) return;
+  if (!amHost() || !H || !H.type || H.ending) return;
   ROLE_LISTS[H.type].forEach(role => {
     if (roleHolder(H.type, role, H.order, H.roomIndex) === id && H.views[role]) {
       send('PRIVATE_VIEW', { room: H.roomIndex, role, data: H.views[role] }, { topic: topicPrivate(net.roomCode, id) });
