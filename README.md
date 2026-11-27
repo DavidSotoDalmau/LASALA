@@ -54,6 +54,19 @@ Los roles se reparten de forma circular y **rotan en cada sala**, para que todos
 
 En Normal y Difícil aparecen dos roles más: el *Interruptor de inversión* (diales cuyo símbolo correcto es el opuesto en el círculo de símbolos) y el *Sentido de lectura* (si la palabra descifrada hay que leerla al revés). Un error es un giro fallido, un choque o una respuesta incorrecta.
 
+### Complicaciones adicionales
+
+| Complicación | Normal | Difícil |
+|---|---|---|
+| Deriva de los diales: todos avanzan un símbolo por su cuenta | cada 60 s | cada 45 s |
+| Sensor de suelo con ruido: a veces da un color falso | 20 % | 30 % |
+| Información privada efímera: se ve 15 s y no se puede volver a ver hasta pasados 30 s | no | sí |
+| Chat sin nombres de símbolos ni de colores (hay que describirlos) | no | sí |
+| Rueda que se baraja: cada respuesta errónea cambia clave y mensaje | no | sí |
+| Saboteador: un jugador recibe un dato falso en cada sala y no lo sabe (3 o 4 jugadores) | no | sí |
+
+El saboteador se elige al azar en cada sala entre quienes tienen información corruptible. Con 2 jugadores se desactiva, porque nadie podría contrastar el dato. El anfitrión puede ser saboteador: su cliente recibe el dato falso como cualquier otro, y la verdad solo está en la memoria del anfitrión. El filtro de palabras del chat se aplica en el cliente (juego casual, no a prueba de trampas).
+
 Se gana al resolver las tres salas en 8 minutos. Se pierde al agotar el tiempo o los intentos de una sala.
 
 ## Protocolo

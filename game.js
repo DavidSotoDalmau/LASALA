@@ -39,10 +39,17 @@ const SESSION_KEY = 'hypothesis-session-v2';
 
 // keys: giros de llave (sala 1). bumps: choques permitidos (sala 2). tries: respuestas erróneas (sala 3).
 const DIFFICULTIES = {
-  easy:   { label: 'Fácil',   keys: 8, bumps: 14, tries: 5, maze: 4, hideStart: false, colors: 4, invert: 0, reverse: false, showCount: true,  penaltyMs: 0 },
-  normal: { label: 'Normal',  keys: 6, bumps: 10, tries: 4, maze: 5, hideStart: true,  colors: 4, invert: 1, reverse: true,  showCount: false, penaltyMs: 15000 },
-  hard:   { label: 'Difícil', keys: 5, bumps: 7,  tries: 3, maze: 6, hideStart: true,  colors: 3, invert: 2, reverse: true,  showCount: false, penaltyMs: 15000 }
+  easy:   { label: 'Fácil',   keys: 8, bumps: 14, tries: 5, maze: 4, hideStart: false, colors: 4, invert: 0, reverse: false, showCount: true,  penaltyMs: 0,
+            driftMs: 0, noise: 0, ephemeral: false, banWords: false, shuffleWheel: false, saboteur: false },
+  normal: { label: 'Normal',  keys: 6, bumps: 10, tries: 4, maze: 5, hideStart: true,  colors: 4, invert: 1, reverse: true,  showCount: false, penaltyMs: 15000,
+            driftMs: 60000, noise: 20, ephemeral: false, banWords: false, shuffleWheel: false, saboteur: false },
+  hard:   { label: 'Difícil', keys: 5, bumps: 7,  tries: 3, maze: 6, hideStart: true,  colors: 3, invert: 2, reverse: true,  showCount: false, penaltyMs: 15000,
+            driftMs: 45000, noise: 30, ephemeral: true, banWords: true, shuffleWheel: true, saboteur: true }
 };
+const EPHEMERAL_SHOW_MS = 15000, EPHEMERAL_COOLDOWN_MS = 30000;
+const CATEGORIES = ['Animal', 'Árbol', 'Comida'];
+// Palabras que el chat bloquea en Difícil (nombres de símbolos y colores, y sus códigos del mapa).
+const BANNED_RE = /\b(sol|soles|lunas?|estrellas?|llaves?|gotas?|hojas?|roj[oa]s?|roj|azul(es)?|azu|verdes?|ambar|amb|violetas?|gris(es)?|gri)\b/;
 
 const SYMBOLS = [
   { id: 'sun',  name: 'Sol',      glyph: '\u2600\uFE0E' },
@@ -208,21 +215,21 @@ function mazeViews(m, hideStart) {
 }
 
 // Sala 3: César con desplazamiento dado por un símbolo clave; rueda símbolo -> número.
-function genCipher(cfg) {
-  const [word, cat] = WORDS[randInt(WORDS.length)];
+function cipherViews(word, cat, rev) {
   const shifts = shuffle([1, 2, 3, 4, 5, 6, 7, 8, 9]).slice(0, 6);
   const keyIdx = randInt(6);
   const shift = shifts[keyIdx];
-  const rev = cfg.reverse && randInt(2) === 1;
   const base = rev ? word.split('').reverse().join('') : word;
   const enc = base.split('').map(ch => String.fromCharCode(65 + (ch.charCodeAt(0) - 65 + shift) % 26)).join('');
   return {
-    word,
-    views: {
-      texto: [enc], clave: [SYMBOLS[keyIdx].id], categoria: [cat], orden: [rev ? 'alreves' : 'derecho'],
-      tabla: SYMBOLS.flatMap((s, i) => [s.id, String(shifts[i])])
-    }
+    texto: [enc], clave: [SYMBOLS[keyIdx].id], categoria: [cat], orden: [rev ? 'alreves' : 'derecho'],
+    tabla: SYMBOLS.flatMap((s, i) => [s.id, String(shifts[i])])
   };
+}
+function genCipher(cfg) {
+  const [word, cat] = WORDS[randInt(WORDS.length)];
+  const rev = cfg.reverse && randInt(2) === 1;
+  return { word, cat, rev, views: cipherViews(word, cat, rev) };
 }
 
 /* ===================== 4. VALIDACIÓN DE MENSAJES ===================== */
@@ -239,7 +246,7 @@ const isDiff = v => typeof v === 'string' && Object.prototype.hasOwnProperty.cal
 const isOrder = v => Array.isArray(v) && v.length >= 1 && v.length <= MAX_PLAYERS && v.every(isId);
 const isDials = v => Array.isArray(v) && v.length === 4 && v.every(x => isInt(x, 0, 5));
 const isPlayerEntry = p => keysAre(p, ['id', 'name', 'seq', 'connected']) && isId(p.id) && isName(p.name) && isInt(p.seq, 1, 9999) && isBool(p.connected);
-const UPDATE_EVENTS = ['dial', 'key', 'move_ok', 'bump', 'answer_wrong'];
+const UPDATE_EVENTS = ['dial', 'key', 'move_ok', 'bump', 'answer_wrong', 'drift'];
 
 // qos: 0 para chat y presencia; 1 para cambios de estado y acciones.
 const TYPES = {
@@ -387,7 +394,7 @@ function freshGame() {
 let G = freshGame();
 let H = null; // estado autoritativo del anfitrión (solo en su memoria)
 
-const ui = { screen: 'home', busy: false, hideClues: false, chatRendered: 0, joinTimer: null, renderQueued: false };
+const ui = { screen: 'home', busy: false, hideClues: false, privShownAt: 0, chatRendered: 0, joinTimer: null, renderQueued: false };
 const rate = { chat: [], actions: [] };
 
 const getPlayer = id => G.players.find(p => p.id === id) || null;
@@ -476,6 +483,7 @@ const handlers = {
     if (G.phase !== 'lobby') return;
     G.phase = 'playing'; G.difficulty = p.difficulty; G.remainingMs = p.remainingMs;
     G.roomsSolved = 0; G.roomIndex = 0; G.roomTransition = false; G.log = [];
+    ui.privShownAt = performance.now(); ui.hideClues = false;
     setScreen('game');
   },
 
@@ -486,6 +494,7 @@ const handlers = {
     if (G.phase !== 'playing') return;
     G.roomIndex = p.room; G.max = p.max; G.order = p.order; G.dials = p.dials; G.used = 0; G.last = null;
     G.remainingMs = p.remainingMs; G.roomTransition = false; G.log = [];
+    ui.privShownAt = performance.now(); ui.hideClues = false;
     addLog('Empieza la sala «' + ROOM_TITLES[ROOM_TYPES[p.room]] + '».');
     toast('Sala ' + (p.room + 1) + ' de ' + TOTAL_ROOMS + ': ' + ROOM_TITLES[ROOM_TYPES[p.room]], 'good');
   },
@@ -500,6 +509,7 @@ const handlers = {
     const penTxt = pen ? ' (−' + (pen / 1000) + ' s)' : '';
     switch (p.event) {
       case 'dial': G.dials[p.a] = p.b; break;
+      case 'drift': G.dials = G.dials.map(v => (v + 1) % 6); addLog('Los diales han avanzado un símbolo por su cuenta.'); toast('¡Deriva! Todos los diales avanzan un símbolo.', 'bad'); break;
       case 'key':
         G.last = { event: 'key', a: p.a };
         addLog(who + ' giró la llave: ' + (p.a === 4 ? '¡se abre!' : p.a < 0 ? 'no se abre' + penTxt + '.' : p.a + ' de 4 diales correctos' + penTxt + '.'));
@@ -508,7 +518,7 @@ const handlers = {
       case 'bump': G.last = { event: 'bump', a: 0 }; addLog(who + ' movió la ficha: chocó contra un muro' + penTxt + '.'); break;
       case 'answer_wrong':
         G.last = { event: 'answer_wrong', a: p.a };
-        addLog(who + ' propuso una palabra: ' + (p.a === 5 ? '¡correcta!' : p.a < 0 ? 'incorrecta' + penTxt + '.' : p.a + ' de 5 letras en su sitio' + penTxt + '.'));
+        addLog(who + ' propuso una palabra: ' + (p.a === 5 ? '¡correcta!' : p.a < 0 ? 'incorrecta' + penTxt + '.' : p.a + ' de 5 letras en su sitio' + penTxt + '.') + (p.a !== 5 && DIFFICULTIES[G.difficulty].shuffleWheel ? ' La rueda se ha barajado: cambian la clave y el mensaje.' : ''));
         break;
     }
   },
@@ -615,6 +625,7 @@ function applySync(msg) {
   G.hostId = p.hostId; G.difficulty = p.difficulty; G.roomIndex = p.roomIndex; G.remainingMs = p.remainingMs;
   G.roomsSolved = p.roomsSolved; G.used = p.used; G.max = p.max; G.order = p.order; G.dials = p.dials;
   G.awaitRecoverySince = null; G.joined = true;
+  if (!wasJoined) ui.privShownAt = performance.now();
   clearTimeout(ui.joinTimer);
   if (p.phase === 'over') { if (!G.result) { handleRemoved('over'); return; } }
   else if (G.phase !== p.phase || !wasJoined) G.phase = p.phase;
@@ -628,7 +639,8 @@ function applySync(msg) {
 
 function newHostState() {
   return { type: null, roomIndex: 0, order: [], views: {}, solution: null, maze: null, word: '',
-    used: 0, max: 6, dials: [0, 0, 0, 0], locked: true, ending: false, transitionTimer: null, actTimes: {} };
+    used: 0, max: 6, dials: [0, 0, 0, 0], locked: true, ending: false, transitionTimer: null, actTimes: {},
+    cat: '', rev: false, sab: null, driftAcc: 0 };
 }
 
 function buildSyncPayload(rejected) {
@@ -648,14 +660,45 @@ function hostSendViews(id) {
   if (!amHost() || !H || !H.type || H.ending) return;
   roleList(H.type).forEach(role => {
     if (roleHolder(H.type, role, H.order, H.roomIndex) === id && H.views[role]) {
-      send('PRIVATE_VIEW', { room: H.roomIndex, role, data: H.views[role] }, { topic: topicPrivate(net.roomCode, id) });
+      send('PRIVATE_VIEW', { room: H.roomIndex, role, data: viewData(role) }, { topic: topicPrivate(net.roomCode, id) });
     }
   });
 }
+// Saboteador (Difícil, 3-4 jugadores): un jugador recibe un dato falso y nadie, ni él, lo sabe.
+function pickSaboteur() {
+  const options = { dials: ['manual', 'tabla', 'regla'], maze: ['fila'], cipher: ['clave', 'categoria', 'orden'] }[H.type];
+  const role = shuffle(options.filter(r => roleList(H.type).includes(r) && H.views[r]))[0];
+  if (!role) return null;
+  const two = n => { const i = randInt(n); return [i, (i + 1 + randInt(n - 1)) % n]; };
+  const p = {};
+  if (role === 'manual') { [p.i, p.j] = two(4); }
+  else if (role === 'tabla') { [p.i, p.j] = two(6); }
+  else if (role === 'regla') { const inv = H.views.regla.map(Number); p.t = randInt(inv.length); p.n = [1, 2, 3, 4].filter(x => !inv.includes(x))[0] || 1; }
+  else if (role === 'fila') { p.off = randInt(2) ? 1 : -1; }
+  else if (role === 'clave') { p.k = 1 + randInt(5); }
+  return { role, p };
+}
+// Datos que ve realmente el jugador: los verdaderos, salvo el rol saboteado.
+function viewData(role) {
+  const d = H.views[role], s = H.sab;
+  if (!s || s.role !== role) return d;
+  const p = s.p, c = d.slice();
+  switch (role) {
+    case 'manual': [c[p.i], c[p.j]] = [c[p.j], c[p.i]]; return c;
+    case 'tabla': { const a = 2 * p.i + 1, b = 2 * p.j + 1; [c[a], c[b]] = [c[b], c[a]]; return c; }
+    case 'regla': return c.map((x, k) => k === p.t ? String(p.n) : x);
+    case 'fila': { const real = +d[0]; let r = real + p.off; if (r < 1 || r > H.maze.n) r = real - p.off; return [String(r)]; }
+    case 'clave': return [SYMBOLS[(SYMBOLS.findIndex(x => x.id === d[0]) + p.k) % 6].id];
+    case 'categoria': return [CATEGORIES[(CATEGORIES.indexOf(d[0]) + 1) % CATEGORIES.length]];
+    case 'orden': return [d[0] === 'alreves' ? 'derecho' : 'alreves'];
+    default: return d;
+  }
+}
+
 function hostSendRole(role) {
   if (!H) return;
   const id = roleHolder(H.type, role, H.order, H.roomIndex);
-  send('PRIVATE_VIEW', { room: H.roomIndex, role, data: H.views[role] }, { topic: topicPrivate(net.roomCode, id) });
+  send('PRIVATE_VIEW', { room: H.roomIndex, role, data: viewData(role) }, { topic: topicPrivate(net.roomCode, id) });
 }
 
 function hostStartGame() {
@@ -674,7 +717,7 @@ function hostBeginRoom(idx) {
   clearTimeout(H.transitionTimer);
   const cfg = DIFFICULTIES[G.difficulty], type = ROOM_TYPES[idx];
   H.type = type; H.roomIndex = idx; H.order = connectedPlayers().map(p => p.id);
-  H.used = 0; H.locked = false; H.actTimes = {}; H.dials = [0, 0, 0, 0];
+  H.used = 0; H.locked = false; H.actTimes = {}; H.dials = [0, 0, 0, 0]; H.sab = null; H.driftAcc = 0;
   if (type === 'dials') {
     const d = genDials(cfg);
     H.solution = d.solution; H.dials = d.dials.slice(); H.views = d.views; H.max = cfg.keys;
@@ -682,8 +725,9 @@ function hostBeginRoom(idx) {
     H.maze = genMaze(cfg.maze, cfg.hideStart, cfg.colors); H.views = mazeViews(H.maze, cfg.hideStart); H.max = cfg.bumps;
   } else {
     const c = genCipher(cfg);
-    H.word = c.word; H.views = c.views; H.max = cfg.tries;
+    H.word = c.word; H.cat = c.cat; H.rev = c.rev; H.views = c.views; H.max = cfg.tries;
   }
+  if (cfg.saboteur && H.order.length >= 3) H.sab = pickSaboteur();
   H.order.forEach(hostSendViews);
   send('ROOM_START', { room: idx, max: H.max, order: H.order, remainingMs: Math.max(0, Math.round(G.remainingMs)), dials: H.dials });
 }
@@ -737,7 +781,9 @@ function hostOnAction(msg) {
       if (H.used >= H.max) hostEndGame('attempts');
     } else {
       m.pos = (Math.floor(m.pos / m.n) + d.dr) * m.n + (m.pos % m.n) + d.dc;
-      H.views.suelo = [COLORS[m.colors[m.pos]].id];
+      const dc = DIFFICULTIES[G.difficulty], real = m.colors[m.pos];
+      const shown = (dc.noise && randInt(100) < dc.noise) ? (real + 1 + randInt(dc.colors - 1)) % dc.colors : real;
+      H.views.suelo = [COLORS[shown].id];
       H.views.fila = [String(Math.floor(m.pos / m.n) + 1)];
       hostUpdate('move_ok', by, 0, 0);
       hostSendRole('suelo'); hostSendRole('fila');
@@ -749,6 +795,10 @@ function hostOnAction(msg) {
     if (correct === 5) { hostUpdate('answer_wrong', by, 5, 0); hostSolved(); return; }
     hostPenalty();
     hostUpdate('answer_wrong', by, DIFFICULTIES[G.difficulty].showCount ? correct : -1, 0);
+    if (DIFFICULTIES[G.difficulty].shuffleWheel && H.used < H.max) {
+      Object.assign(H.views, cipherViews(H.word, H.cat, H.rev));
+      ['texto', 'clave', 'tabla'].forEach(hostSendRole);
+    }
     if (H.used >= H.max) hostEndGame('attempts');
   }
 }
@@ -757,6 +807,12 @@ function hostOnAction(msg) {
 function hostPenalty() {
   H.used++;
   G.remainingMs = Math.max(0, G.remainingMs - DIFFICULTIES[G.difficulty].penaltyMs);
+}
+
+// Deriva: cada cierto tiempo todos los diales avanzan un símbolo por su cuenta.
+function hostDrift() {
+  H.dials = H.dials.map(v => (v + 1) % 6);
+  hostUpdate('drift', me.id, 0, 0);
 }
 
 function hostSolved() {
@@ -823,6 +879,10 @@ function tick() {
   }
   if (G.joined && G.phase === 'playing' && G.awaitRecoverySince !== null && now - G.awaitRecoverySince > 8000) {
     applyGameOver({ won: false, reason: 'host_lost', roomsSolved: G.roomsSolved, remainingMs: Math.round(G.remainingMs) });
+  }
+  if (amHost() && H && G.phase === 'playing' && H.type === 'dials' && !H.locked && !H.ending && !G.roomTransition && !isPaused() && DIFFICULTIES[G.difficulty].driftMs) {
+    H.driftAcc += dt;
+    if (H.driftAcc >= DIFFICULTIES[G.difficulty].driftMs) { H.driftAcc = 0; hostDrift(); }
   }
   if (tickCount % 4 === 0) { presenceCheck(); scheduleRender(); }
   if (tickCount % 120 === 0) pruneRecentIds();
@@ -980,12 +1040,26 @@ function roleBody(type, role) {
   }
 }
 
+function privHidden() {
+  const eph = DIFFICULTIES[G.difficulty].ephemeral;
+  return ui.hideClues || (eph && performance.now() - ui.privShownAt > EPHEMERAL_SHOW_MS);
+}
+function togglePrivate() {
+  const eph = DIFFICULTIES[G.difficulty].ephemeral;
+  if (eph && privHidden()) {
+    if (performance.now() - ui.privShownAt < EPHEMERAL_COOLDOWN_MS) return;
+    ui.privShownAt = performance.now(); ui.hideClues = false;
+  } else ui.hideClues = !ui.hideClues;
+  scheduleRender();
+}
 function renderPrivate() {
   const type = roomType(), roles = myRoles();
-  const btn = $('btn-toggle-clues');
-  btn.textContent = ui.hideClues ? 'Mostrar información' : 'Ocultar información';
-  btn.setAttribute('aria-expanded', ui.hideClues ? 'false' : 'true');
-  $('private-area').hidden = ui.hideClues;
+  const btn = $('btn-toggle-clues'), eph = DIFFICULTIES[G.difficulty].ephemeral, hidden = privHidden();
+  const wait = Math.ceil((EPHEMERAL_COOLDOWN_MS - (performance.now() - ui.privShownAt)) / 1000);
+  if (eph && hidden && wait > 0) { btn.disabled = true; btn.textContent = 'Podrás verla de nuevo en ' + wait + ' s'; }
+  else { btn.disabled = false; btn.textContent = hidden ? 'Mostrar información' : 'Ocultar información'; }
+  btn.setAttribute('aria-expanded', hidden ? 'false' : 'true');
+  $('private-area').hidden = hidden;
   const sig = JSON.stringify([G.roomIndex, roles, roles.map(r => G.views[G.roomIndex + ':' + r])]);
   fill($('private-area'), sig, () => {
     const out = roles.map(r => h('li', null, h('h4', { text: ROLE_NAMES[type][r] }), roleBody(type, r)));
@@ -1042,7 +1116,12 @@ function renderGame() {
   $('attempts-label').textContent = COUNTER_LABELS[type] + ': ' + G.used + ' de ' + G.max;
   const dcfg = DIFFICULTIES[G.difficulty];
   $('room-intro').textContent = ROOM_INTROS[type] + (dcfg.showCount || type === 'maze' ? '' : ' No se indica cuántos aciertos hay.') +
-    (dcfg.penaltyMs ? ' Cada error resta ' + (dcfg.penaltyMs / 1000) + ' segundos.' : '');
+    (dcfg.penaltyMs ? ' Cada error resta ' + (dcfg.penaltyMs / 1000) + ' segundos.' : '') +
+    (type === 'dials' && dcfg.driftMs ? ' Cada ' + (dcfg.driftMs / 1000) + ' s todos los diales avanzan un símbolo por su cuenta.' : '') +
+    (type === 'maze' && dcfg.noise ? ' El sensor de suelo falla de vez en cuando.' : '') +
+    (type === 'cipher' && dcfg.shuffleWheel ? ' Cada respuesta errónea baraja la rueda: cambian la clave y el mensaje.' : '') +
+    (dcfg.ephemeral ? ' Tu información privada solo se ve ' + (EPHEMERAL_SHOW_MS / 1000) + ' s y no puedes volver a verla durante ' + (EPHEMERAL_COOLDOWN_MS / 1000) + ' s.' : '') +
+    (dcfg.banWords ? ' En el chat están prohibidos los nombres de símbolos y colores: describidlos.' : '');
   const paused = isPaused();
   $('pause-flag').hidden = !paused;
   const st = $('game-status');
@@ -1178,6 +1257,10 @@ function sendChat() {
   const input = $('chat-input');
   const text = input.value.replace(/[\u0000-\u001F\u007F]/g, ' ').trim().slice(0, 200);
   if (!text) return;
+  if (DIFFICULTIES[G.difficulty].banWords && G.phase === 'playing') {
+    const m = BANNED_RE.exec(text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''));
+    if (m) { toast('Palabra prohibida en Difícil: «' + m[0] + '». Descríbelo con otras palabras.', 'bad'); return; }
+  }
   const now = Date.now();
   rate.chat = rate.chat.filter(t => now - t < CHAT_LIMIT.windowMs);
   if (rate.chat.length >= CHAT_LIMIT.count) { toast('Vas muy rápido: máximo 5 mensajes cada 10 segundos.', 'bad'); return; }
@@ -1209,7 +1292,7 @@ function init() {
   $('btn-leave-lobby').addEventListener('click', leaveRoom);
   $('btn-leave-game').addEventListener('click', () => { if (confirm('¿Seguro que quieres salir de la partida?')) leaveRoom(); });
   $('btn-back-home').addEventListener('click', leaveRoom);
-  $('btn-toggle-clues').addEventListener('click', () => { ui.hideClues = !ui.hideClues; scheduleRender(); });
+  $('btn-toggle-clues').addEventListener('click', togglePrivate);
   $('btn-answer').addEventListener('click', sendAnswer);
   $('answer-input').addEventListener('input', e => { e.target.value = e.target.value.toUpperCase().replace(/[^A-Z]/g, ''); });
   $('answer-input').addEventListener('keydown', e => { if (e.key === 'Enter') sendAnswer(); });
