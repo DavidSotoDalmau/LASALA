@@ -39,15 +39,15 @@ const SESSION_KEY = 'hypothesis-session-v2';
 
 // keys: giros de llave (sala 1). bumps: choques permitidos (sala 2). tries: respuestas erróneas (sala 3).
 const DIFFICULTIES = {
-  easy:   { label: 'Fácil',   keys: 8, bumps: 14, tries: 5, maze: 4, hideStart: false, colors: 4, invert: 0, reverse: false, showCount: true,  penaltyMs: 0,
+  easy:   { label: 'Fácil',   keys: 8, bumps: 14, tries: 5, maze: 4, hideStart: false, colors: 4, dials: 4, wordLen: 5, invert: 0, reverse: false, showCount: true,  penaltyMs: 0,
             driftMs: 0, noise: 0, ephemeral: false, banWords: false, shuffleWheel: false, saboteur: false },
-  normal: { label: 'Normal',  keys: 6, bumps: 10, tries: 4, maze: 5, hideStart: true,  colors: 4, invert: 1, reverse: true,  showCount: false, penaltyMs: 15000,
+  normal: { label: 'Normal',  keys: 6, bumps: 10, tries: 4, maze: 5, hideStart: true,  colors: 4, dials: 7, wordLen: 7, invert: 2, reverse: true,  showCount: false, penaltyMs: 15000,
             driftMs: 60000, noise: 20, ephemeral: false, banWords: false, shuffleWheel: false, saboteur: false },
-  hard:   { label: 'Difícil', keys: 5, bumps: 7,  tries: 3, maze: 6, hideStart: true,  colors: 3, invert: 2, reverse: true,  showCount: false, penaltyMs: 15000,
+  hard:   { label: 'Difícil', keys: 5, bumps: 7,  tries: 3, maze: 6, hideStart: true,  colors: 3, dials: 10, wordLen: 10, invert: 3, reverse: true,  showCount: false, penaltyMs: 15000,
             driftMs: 45000, noise: 30, ephemeral: true, banWords: true, shuffleWheel: true, saboteur: true }
 };
 const EPHEMERAL_SHOW_MS = 15000, EPHEMERAL_COOLDOWN_MS = 30000;
-const CATEGORIES = ['Animal', 'Árbol', 'Comida'];
+const CATEGORIES = ['Animal', 'Planta', 'Comida'];
 // Palabras que el chat bloquea en Difícil (nombres de símbolos y colores, y sus códigos del mapa).
 const BANNED_RE = /\b(sol|soles|lunas?|estrellas?|llaves?|gotas?|hojas?|roj[oa]s?|roj|azul(es)?|azu|verdes?|ambar|amb|violetas?|gris(es)?|gri)\b/;
 
@@ -77,7 +77,7 @@ const ROOM_TITLES = { dials: 'Los diales', maze: 'El laberinto ciego', cipher: '
 const ROOM_INTROS = {
   dials: 'Cada dial lo controla un jugador, y solo su dueño ve el símbolo que muestra. Descubrid qué símbolo debe llevar cada dial y luego girad la llave.',
   maze: 'Una persona mueve la ficha sin ver el mapa; otra ve el mapa pero no la ficha. Guiaos con el color del suelo y la fila para encontrar la salida. Cada choque contra un muro cuenta. En Normal y Difícil el mapa no marca el inicio: hay que deducirlo.',
-  cipher: 'El mensaje cifrado desplaza cada letra hacia delante en el alfabeto de 26 letras (A–Z, sin Ñ). Hay que averiguar cuántos puestos y retroceder. Enviad la palabra de 5 letras.'
+  cipher: 'El mensaje cifrado desplaza cada letra hacia delante en el alfabeto de 26 letras (A–Z, sin Ñ). Hay que averiguar cuántos puestos y retroceder. Enviad la palabra completa.'
 };
 const COUNTER_LABELS = { dials: 'Giros de llave', maze: 'Choques', cipher: 'Respuestas erróneas' };
 const ROLE_LISTS = {
@@ -98,9 +98,18 @@ const DIRS = [
   { name: 'Oeste', cls: 'o', dr: 0,  dc: -1, bit: 8 }
 ];
 const WORDS = [
+  // 5 letras
   ['TIGRE', 'Animal'], ['ZORRO', 'Animal'], ['CABRA', 'Animal'], ['LLAMA', 'Animal'], ['COBRA', 'Animal'],
-  ['ROBLE', 'Árbol'], ['PALMA', 'Árbol'], ['CEDRO', 'Árbol'], ['OLIVO', 'Árbol'], ['ROSAL', 'Árbol'],
-  ['QUESO', 'Comida'], ['PASTA', 'Comida'], ['TARTA', 'Comida'], ['MANGO', 'Comida'], ['SALSA', 'Comida']
+  ['ROBLE', 'Planta'], ['PALMA', 'Planta'], ['CEDRO', 'Planta'], ['OLIVO', 'Planta'], ['ROSAL', 'Planta'],
+  ['QUESO', 'Comida'], ['PASTA', 'Comida'], ['TARTA', 'Comida'], ['MANGO', 'Comida'], ['SALSA', 'Comida'],
+  // 7 letras
+  ['CABALLO', 'Animal'], ['GALLINA', 'Animal'], ['TORTUGA', 'Animal'], ['PANTERA', 'Animal'],
+  ['GIRASOL', 'Planta'], ['AZUCENA', 'Planta'], ['HIGUERA', 'Planta'], ['NARANJO', 'Planta'],
+  ['CHORIZO', 'Comida'], ['LENTEJA', 'Comida'], ['PESCADO', 'Comida'], ['TOSTADA', 'Comida'],
+  // 10 letras
+  ['HIPOPOTAMO', 'Animal'], ['MURCIELAGO', 'Animal'], ['GOLONDRINA', 'Animal'], ['SALAMANDRA', 'Animal'],
+  ['CRISANTEMO', 'Planta'], ['EUCALIPTOS', 'Planta'], ['HORTENSIAS', 'Planta'], ['ALCORNOQUE', 'Planta'],
+  ['ALBONDIGAS', 'Comida'], ['SALCHICHON', 'Comida'], ['CHOCOLATES', 'Comida'], ['MERMELADAS', 'Comida']
 ];
 
 /* ===================== 2. UTILIDADES ===================== */
@@ -156,8 +165,8 @@ function rolesOf(type, order, room, id) {
 // Sala 1: manual (dial -> color) + tabla (color -> símbolo) => símbolo correcto de cada dial.
 function genDials(cfg) {
   const tableSyms = shuffle([0, 1, 2, 3, 4, 5]);               // color i -> símbolo tableSyms[i]
-  const dialColors = shuffle([0, 1, 2, 3, 4, 5]).slice(0, 4);  // color que exige cada dial
-  const inverted = shuffle([0, 1, 2, 3]).slice(0, cfg.invert).sort();  // diales invertidos: símbolo opuesto (+3 en el círculo)
+  const dialColors = Array.from({ length: cfg.dials }, () => randInt(6));  // color que exige cada dial (puede repetirse)
+  const inverted = shuffle(Array.from({ length: cfg.dials }, (_, i) => i)).slice(0, cfg.invert).sort((a, b) => a - b);  // diales invertidos: símbolo opuesto (+3 en el círculo)
   const solution = dialColors.map((c, i) => inverted.includes(i) ? (tableSyms[c] + 3) % 6 : tableSyms[c]);
   let dials;
   do { dials = solution.map(() => randInt(6)); } while (dials.some((v, i) => v === solution[i]));
@@ -227,7 +236,8 @@ function cipherViews(word, cat, rev) {
   };
 }
 function genCipher(cfg) {
-  const [word, cat] = WORDS[randInt(WORDS.length)];
+  const pool = WORDS.filter(w => w[0].length === cfg.wordLen);
+  const [word, cat] = pool[randInt(pool.length)];
   const rev = cfg.reverse && randInt(2) === 1;
   return { word, cat, rev, views: cipherViews(word, cat, rev) };
 }
@@ -244,7 +254,7 @@ const isId = v => typeof v === 'string' && ID_RE.test(v);
 const isName = v => isStr(v, 1, 16);
 const isDiff = v => typeof v === 'string' && Object.prototype.hasOwnProperty.call(DIFFICULTIES, v);
 const isOrder = v => Array.isArray(v) && v.length >= 1 && v.length <= MAX_PLAYERS && v.every(isId);
-const isDials = v => Array.isArray(v) && v.length === 4 && v.every(x => isInt(x, 0, 5));
+const isDials = v => Array.isArray(v) && v.length >= 1 && v.length <= 10 && v.every(x => isInt(x, 0, 5));
 const isPlayerEntry = p => keysAre(p, ['id', 'name', 'seq', 'connected']) && isId(p.id) && isName(p.name) && isInt(p.seq, 1, 9999) && isBool(p.connected);
 const UPDATE_EVENTS = ['dial', 'key', 'move_ok', 'bump', 'answer_wrong', 'drift'];
 
@@ -257,7 +267,7 @@ const TYPES = {
   PRIVATE_VIEW: { qos: 1, validate: p => keysAre(p, ['room', 'role', 'data']) && isInt(p.room, 0, TOTAL_ROOMS - 1) && ALL_ROLES.includes(p.role) &&
     Array.isArray(p.data) && p.data.length <= 64 && p.data.every(x => isStr(x, 0, 12)) },
   ROOM_START: { qos: 1, validate: p => keysAre(p, ['room', 'max', 'order', 'remainingMs', 'dials']) && isInt(p.room, 0, TOTAL_ROOMS - 1) && isInt(p.max, 1, 30) && isOrder(p.order) && isInt(p.remainingMs, 0, GAME_MS) && isDials(p.dials) },
-  ACTION: { qos: 1, validate: p => keysAre(p, ['kind', 'a', 'b', 'text']) && ['dial', 'key', 'move', 'answer'].includes(p.kind) && isInt(p.a, -1, 9) && isInt(p.b, -1, 9) && isStr(p.text, 0, 5) && /^[A-Z]*$/.test(p.text) },
+  ACTION: { qos: 1, validate: p => keysAre(p, ['kind', 'a', 'b', 'text']) && ['dial', 'key', 'move', 'answer'].includes(p.kind) && isInt(p.a, -1, 9) && isInt(p.b, -1, 9) && isStr(p.text, 0, 10) && /^[A-Z]*$/.test(p.text) },
   ROOM_UPDATE: { qos: 1, validate: p => keysAre(p, ['room', 'event', 'by', 'a', 'b', 'used', 'max', 'remainingMs']) && isInt(p.remainingMs, 0, GAME_MS) && isInt(p.room, 0, TOTAL_ROOMS - 1) && UPDATE_EVENTS.includes(p.event) && isId(p.by) && isInt(p.a, -1, 99) && isInt(p.b, -1, 99) && isInt(p.used, 0, 99) && isInt(p.max, 1, 30) },
   ROOM_SOLVED: { qos: 1, validate: p => keysAre(p, ['room', 'roomsSolved', 'remainingMs']) && isInt(p.room, 0, TOTAL_ROOMS - 1) && isInt(p.roomsSolved, 1, TOTAL_ROOMS) && isInt(p.remainingMs, 0, GAME_MS) },
   GAME_OVER: { qos: 1, validate: p => keysAre(p, ['won', 'reason', 'roomsSolved', 'remainingMs']) && isBool(p.won) && ['solved', 'time', 'attempts', 'host_lost'].includes(p.reason) && isInt(p.roomsSolved, 0, TOTAL_ROOMS) && isInt(p.remainingMs, 0, GAME_MS) },
@@ -394,7 +404,7 @@ function freshGame() {
 let G = freshGame();
 let H = null; // estado autoritativo del anfitrión (solo en su memoria)
 
-const ui = { screen: 'home', busy: false, hideClues: false, privShownAt: 0, chatRendered: 0, joinTimer: null, renderQueued: false };
+const ui = { screen: 'home', busy: false, hideClues: false, privShownAt: 0, unlocked: new Set(), miniTypes: {}, mini: null, chatRendered: 0, joinTimer: null, renderQueued: false };
 const rate = { chat: [], actions: [] };
 
 const getPlayer = id => G.players.find(p => p.id === id) || null;
@@ -411,6 +421,7 @@ function resetAll() {
   clearTimeout(ui.joinTimer);
   G = freshGame(); H = null;
   ui.chatRendered = 0; ui.hideClues = false;
+  stopMini(); ui.unlocked = new Set(); ui.miniTypes = {};
   rate.chat = []; rate.actions = [];
   recentIds.clear();
 }
@@ -484,6 +495,7 @@ const handlers = {
     G.phase = 'playing'; G.difficulty = p.difficulty; G.remainingMs = p.remainingMs;
     G.roomsSolved = 0; G.roomIndex = 0; G.roomTransition = false; G.log = [];
     ui.privShownAt = performance.now(); ui.hideClues = false;
+    stopMini(); ui.unlocked = new Set(); ui.miniTypes = {};
     setScreen('game');
   },
 
@@ -495,6 +507,7 @@ const handlers = {
     G.roomIndex = p.room; G.max = p.max; G.order = p.order; G.dials = p.dials; G.used = 0; G.last = null;
     G.remainingMs = p.remainingMs; G.roomTransition = false; G.log = [];
     ui.privShownAt = performance.now(); ui.hideClues = false;
+    stopMini();
     addLog('Empieza la sala «' + ROOM_TITLES[ROOM_TYPES[p.room]] + '».');
     toast('Sala ' + (p.room + 1) + ' de ' + TOTAL_ROOMS + ': ' + ROOM_TITLES[ROOM_TYPES[p.room]], 'good');
   },
@@ -505,20 +518,20 @@ const handlers = {
     const p = msg.payload;
     if (p.room !== G.roomIndex) return;
     G.used = p.used; G.max = p.max; G.remainingMs = p.remainingMs;
-    const who = nameOf(p.by), pen = DIFFICULTIES[G.difficulty].penaltyMs;
+    const who = nameOf(p.by), pen = DIFFICULTIES[G.difficulty].penaltyMs, wl = DIFFICULTIES[G.difficulty].wordLen;
     const penTxt = pen ? ' (−' + (pen / 1000) + ' s)' : '';
     switch (p.event) {
       case 'dial': G.dials[p.a] = p.b; break;
       case 'drift': G.dials = G.dials.map(v => (v + 1) % 6); addLog('Los diales han avanzado un símbolo por su cuenta.'); toast('¡Deriva! Todos los diales avanzan un símbolo.', 'bad'); break;
       case 'key':
         G.last = { event: 'key', a: p.a };
-        addLog(who + ' giró la llave: ' + (p.a === 4 ? '¡se abre!' : p.a < 0 ? 'no se abre' + penTxt + '.' : p.a + ' de 4 diales correctos' + penTxt + '.'));
+        addLog(who + ' giró la llave: ' + (p.a === G.dials.length ? '¡se abre!' : p.a < 0 ? 'no se abre' + penTxt + '.' : p.a + ' de ' + G.dials.length + ' diales correctos' + penTxt + '.'));
         break;
       case 'move_ok': G.last = { event: 'move_ok', a: 0 }; addLog(who + ' movió la ficha: avanzó.'); break;
       case 'bump': G.last = { event: 'bump', a: 0 }; addLog(who + ' movió la ficha: chocó contra un muro' + penTxt + '.'); break;
       case 'answer_wrong':
         G.last = { event: 'answer_wrong', a: p.a };
-        addLog(who + ' propuso una palabra: ' + (p.a === 5 ? '¡correcta!' : p.a < 0 ? 'incorrecta' + penTxt + '.' : p.a + ' de 5 letras en su sitio' + penTxt + '.') + (p.a !== 5 && DIFFICULTIES[G.difficulty].shuffleWheel ? ' La rueda se ha barajado: cambian la clave y el mensaje.' : ''));
+        addLog(who + ' propuso una palabra: ' + (p.a === wl ? '¡correcta!' : p.a < 0 ? 'incorrecta' + penTxt + '.' : p.a + ' de ' + wl + ' letras en su sitio' + penTxt + '.') + (p.a !== wl && DIFFICULTIES[G.difficulty].shuffleWheel ? ' La rueda se ha barajado: cambian la clave y el mensaje.' : ''));
         break;
     }
   },
@@ -556,6 +569,7 @@ function applyGameOver(p) {
   G.phase = 'over'; G.awaitRecoverySince = null;
   G.roomsSolved = p.roomsSolved; G.remainingMs = p.remainingMs;
   G.result = { won: p.won, reason: p.reason };
+  stopMini();
   if (H) clearTimeout(H.transitionTimer);
   setScreen('result');
 }
@@ -671,9 +685,13 @@ function pickSaboteur() {
   if (!role) return null;
   const two = n => { const i = randInt(n); return [i, (i + 1 + randInt(n - 1)) % n]; };
   const p = {};
-  if (role === 'manual') { [p.i, p.j] = two(4); }
+  if (role === 'manual') {
+    const d = H.views.manual;
+    let tries = 0;
+    do { [p.i, p.j] = two(d.length); } while (d[p.i] === d[p.j] && ++tries < 100);
+  }
   else if (role === 'tabla') { [p.i, p.j] = two(6); }
-  else if (role === 'regla') { const inv = H.views.regla.map(Number); p.t = randInt(inv.length); p.n = [1, 2, 3, 4].filter(x => !inv.includes(x))[0] || 1; }
+  else if (role === 'regla') { const inv = H.views.regla.map(Number); p.t = randInt(inv.length); p.n = Array.from({ length: H.dials.length }, (_, i) => i + 1).filter(x => !inv.includes(x))[0] || 1; }
   else if (role === 'fila') { p.off = randInt(2) ? 1 : -1; }
   else if (role === 'clave') { p.k = 1 + randInt(5); }
   return { role, p };
@@ -760,15 +778,16 @@ function hostOnAction(msg) {
 
   if (H.type === 'dials') {
     if (a.kind === 'dial') {
-      if (!isInt(a.a, 0, 3) || (a.b !== 1 && a.b !== -1)) return;
+      if (!isInt(a.a, 0, H.dials.length - 1) || (a.b !== 1 && a.b !== -1)) return;
       if (dialOwner(a.a, H.order, H.roomIndex) !== by) return;
       H.dials[a.a] = (H.dials[a.a] + a.b + 6) % 6;
       hostUpdate('dial', by, a.a, H.dials[a.a]);
     } else if (a.kind === 'key') {
       const correct = H.dials.filter((v, i) => v === H.solution[i]).length;
-      if (correct < 4) hostPenalty();
-      hostUpdate('key', by, correct === 4 ? 4 : (DIFFICULTIES[G.difficulty].showCount ? correct : -1), 0);
-      if (correct === 4) hostSolved();
+      const total = H.dials.length;
+      if (correct < total) hostPenalty();
+      hostUpdate('key', by, correct === total ? total : (DIFFICULTIES[G.difficulty].showCount ? correct : -1), 0);
+      if (correct === total) hostSolved();
       else if (H.used >= H.max) hostEndGame('attempts');
     }
   } else if (H.type === 'maze') {
@@ -790,9 +809,9 @@ function hostOnAction(msg) {
       if (m.pos === m.exit) hostSolved();
     }
   } else if (H.type === 'cipher') {
-    if (a.kind !== 'answer' || !/^[A-Z]{5}$/.test(a.text)) return;
+    if (a.kind !== 'answer' || a.text.length !== H.word.length || !/^[A-Z]+$/.test(a.text)) return;
     const correct = a.text.split('').filter((ch, i) => ch === H.word[i]).length;
-    if (correct === 5) { hostUpdate('answer_wrong', by, 5, 0); hostSolved(); return; }
+    if (correct === H.word.length) { hostUpdate('answer_wrong', by, correct, 0); hostSolved(); return; }
     hostPenalty();
     hostUpdate('answer_wrong', by, DIFFICULTIES[G.difficulty].showCount ? correct : -1, 0);
     if (DIFFICULTIES[G.difficulty].shuffleWheel && H.used < H.max) {
@@ -1042,8 +1061,12 @@ function roleBody(type, role) {
 
 function privHidden() {
   const eph = DIFFICULTIES[G.difficulty].ephemeral;
-  return ui.hideClues || (eph && performance.now() - ui.privShownAt > EPHEMERAL_SHOW_MS);
+  if (ui.hideClues) return true;
+  if (!eph || lockedRoles().length) return false;  // con pistas por desbloquear, el panel sigue visible
+  return performance.now() - ui.privShownAt > EPHEMERAL_SHOW_MS;
 }
+const isLockedRole = r => r !== 'mover' && !ui.unlocked.has(G.roomIndex + ':' + r);
+const lockedRoles = () => myRoles().filter(isLockedRole);
 function togglePrivate() {
   const eph = DIFFICULTIES[G.difficulty].ephemeral;
   if (eph && privHidden()) {
@@ -1060,11 +1083,12 @@ function renderPrivate() {
   else { btn.disabled = false; btn.textContent = hidden ? 'Mostrar información' : 'Ocultar información'; }
   btn.setAttribute('aria-expanded', hidden ? 'false' : 'true');
   $('private-area').hidden = hidden;
-  const sig = JSON.stringify([G.roomIndex, roles, roles.map(r => G.views[G.roomIndex + ':' + r])]);
+  roles.forEach(r => { const k = G.roomIndex + ':' + r; if (!ui.miniTypes[k]) ui.miniTypes[k] = MINI_TYPES[randInt(MINI_TYPES.length)]; });
+  const sig = JSON.stringify([G.roomIndex, roles, roles.map(r => isLockedRole(r) ? ui.miniTypes[G.roomIndex + ':' + r] : G.views[G.roomIndex + ':' + r])]);
   fill($('private-area'), sig, () => {
-    const out = roles.map(r => h('li', null, h('h4', { text: ROLE_NAMES[type][r] }), roleBody(type, r)));
+    const out = roles.map(r => h('li', null, h('h4', { text: ROLE_NAMES[type][r] }), isLockedRole(r) ? lockedBody(r) : roleBody(type, r)));
     if (type === 'dials') {
-      const mine = [0, 1, 2, 3].filter(i => dialOwner(i, G.order, G.roomIndex) === me.id);
+      const mine = G.dials.map((_, i) => i).filter(i => dialOwner(i, G.order, G.roomIndex) === me.id);
       out.push(h('li', null, h('h4', { text: 'Tus diales' }), h('p', { text: mine.length ? 'Controlas: ' + mine.map(i => 'dial ' + (i + 1)).join(', ') + '. Solo tú ves su símbolo.' : 'No controlas ningún dial.' })));
     }
     if (!out.length) out.push(h('li', { class: 'empty', text: 'En esta sala no tienes información privada.' }));
@@ -1078,10 +1102,13 @@ function renderRoomArea() {
   const mover = type === 'maze' && roleHolder('maze', 'mover', G.order, G.roomIndex);
   const sig = JSON.stringify([type, G.dials, G.order, G.used, G.max, G.last, paused, me.id === mover, G.players.map(p => p.name)]);
   $('answer-box').hidden = type !== 'cipher';
+  const wl = DIFFICULTIES[G.difficulty].wordLen;
+  $('answer-input').maxLength = wl;
+  document.querySelector('label[for="answer-input"]').textContent = 'Respuesta (palabra de ' + wl + ' letras)';
   fill(area, sig, () => {
     if (!G.order.length) return [waiting()];
     if (type === 'dials') {
-      const cards = [0, 1, 2, 3].map(i => {
+      const cards = G.dials.map((_, i) => {
         const owner = dialOwner(i, G.order, G.roomIndex), mine = owner === me.id, v = SYMBOLS[G.dials[i]];
         return h('div', { class: 'dial-card' + (mine ? ' mine' : '') },
           h('h4', { text: 'Dial ' + (i + 1) }),
@@ -1094,7 +1121,7 @@ function renderRoomArea() {
       });
       return [h('div', { class: 'dial-grid' }, cards),
         h('button', { type: 'button', class: 'btn primary', disabled: paused, text: 'Girar la llave (' + (G.max - G.used) + ' giros restantes)', onclick: () => sendAction('key', 0, 0, '') }),
-        G.last && G.last.event === 'key' ? h('p', { class: 'result-line', text: G.last.a < 0 ? 'Último giro: la llave no se abre.' : 'Último giro: ' + G.last.a + ' de 4 diales correctos.' }) : h('p', { class: 'muted', text: 'Aún no habéis girado la llave.' })];
+        G.last && G.last.event === 'key' ? h('p', { class: 'result-line', text: G.last.a < 0 ? 'Último giro: la llave no se abre.' : 'Último giro: ' + G.last.a + ' de ' + G.dials.length + ' diales correctos.' }) : h('p', { class: 'muted', text: 'Aún no habéis girado la llave.' })];
     }
     if (type === 'maze') {
       const last = G.last ? h('p', { class: 'result-line', text: G.last.event === 'bump' ? 'Último movimiento: chocó contra un muro.' : 'Último movimiento: avanzó.' }) : h('p', { class: 'muted', text: 'La ficha aún no se ha movido.' });
@@ -1105,7 +1132,7 @@ function renderRoomArea() {
       return [h('p', { text: 'Mueve la ficha ' + nameOf(mover) + '. Guiadle con lo que veis.' }), last];
     }
     return [h('p', { text: 'Descifrad el mensaje entre todos y escribid la palabra.' }),
-      G.last && G.last.event === 'answer_wrong' ? h('p', { class: 'result-line', text: G.last.a < 0 ? 'Última respuesta: incorrecta.' : 'Última respuesta: ' + G.last.a + ' de 5 letras en su sitio.' }) : h('p', { class: 'muted', text: 'Aún no habéis enviado ninguna respuesta.' })];
+      G.last && G.last.event === 'answer_wrong' ? h('p', { class: 'result-line', text: G.last.a < 0 ? 'Última respuesta: incorrecta.' : 'Última respuesta: ' + G.last.a + ' de ' + DIFFICULTIES[G.difficulty].wordLen + ' letras en su sitio.' }) : h('p', { class: 'muted', text: 'Aún no habéis enviado ninguna respuesta.' })];
   });
   $('btn-answer').disabled = paused;
 }
@@ -1160,6 +1187,186 @@ function renderResult() {
   $('result-reason').textContent = reasons[r.reason] || '';
   $('result-rooms').textContent = G.roomsSolved + ' de ' + TOTAL_ROOMS;
   $('result-time').textContent = formatTime(G.remainingMs);
+}
+
+
+/* ============ 10b. MICROJUEGOS: desbloquean cada pista privada (solo en el navegador) ============ */
+
+const MINI = {
+  easy:   { mem: 3, hits: 1, zone: 30, speed: 1.1, ops: 3, calcSec: 45, locks: 1, tol: 6 },
+  normal: { mem: 5, hits: 2, zone: 20, speed: 1.7, ops: 4, calcSec: 35, locks: 2, tol: 3 },
+  hard:   { mem: 7, hits: 3, zone: 12, speed: 2.4, ops: 5, calcSec: 30, locks: 3, tol: 1 }
+};
+const MINI_TYPES = ['memoria', 'reflejos', 'calculo', 'cerradura'];
+const MINI_NAMES = { memoria: 'Memoria de flechas', reflejos: 'Reflejos', calculo: 'Cálculo rápido', cerradura: 'Cerradura de precisión' };
+const ARROWS = [['Arriba', '↑'], ['Derecha', '→'], ['Abajo', '↓'], ['Izquierda', '←']];
+const reducedMotion = () => window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+function stopMini() {
+  if (ui.mini) ui.mini.timers.forEach(t => { clearTimeout(t); clearInterval(t); });
+  ui.mini = null;
+  const area = document.getElementById('mini-area');
+  if (area) { area.hidden = true; area.replaceChildren(); }
+}
+
+function lockedBody(role) {
+  const k = G.roomIndex + ':' + role, type = ui.miniTypes[k];
+  return h('div', null,
+    h('p', { text: 'Información bloqueada. Supera un microjuego para verla.' }),
+    h('button', { type: 'button', class: 'btn small', text: 'Desbloquear: ' + MINI_NAMES[type], onclick: () => openMini(role) }));
+}
+
+function openMini(role) {
+  stopMini();
+  const k = G.roomIndex + ':' + role, type = ui.miniTypes[k], area = $('mini-area');
+  const cfg = MINI[G.difficulty] || MINI.normal;
+  const mini = { key: k, timers: [] };
+  ui.mini = mini;
+  const after = (ms, fn) => { const t = setTimeout(fn, ms); mini.timers.push(t); return t; };
+  const every = (ms, fn) => { const t = setInterval(fn, ms); mini.timers.push(t); return t; };
+  const win = () => {
+    ui.unlocked.add(k); ui.privShownAt = performance.now(); ui.hideClues = false;
+    stopMini(); toast('Información desbloqueada.', 'good'); scheduleRender();
+  };
+  const body = h('div', { class: 'mini-body' });
+  area.hidden = false;
+  area.replaceChildren(
+    h('h4', { text: MINI_NAMES[type] + ' — para ver: ' + ROLE_NAMES[roomType()][role] }),
+    body,
+    h('button', { type: 'button', class: 'btn small', text: 'Cancelar', onclick: () => { stopMini(); scheduleRender(); } }));
+  const api = { body, cfg, after, every, win };
+  ({ memoria: miniMemory, reflejos: miniReflex, calculo: miniCalc, cerradura: miniLock })[type](api);
+  const first = body.querySelector('button:not([disabled]), input');
+  if (first) first.focus({ preventScroll: true });
+}
+
+function miniMemory({ body, cfg, after, win }) {
+  const status = h('p', { role: 'status', 'aria-live': 'polite' });
+  const shown = h('p', { class: 'mini-big', 'aria-hidden': 'true' });
+  const pad = h('div', { class: 'pad' });
+  const buttons = ARROWS.map((a, i) => h('button', { type: 'button', class: 'btn', text: a[1] + ' ' + a[0], disabled: true, onclick: () => press(i) }));
+  buttons.forEach(b => pad.append(b));
+  body.append(status, shown, pad);
+  let seq = [], pos = 0;
+  const setPad = on => buttons.forEach(b => { b.disabled = !on; });
+  function show(k) {
+    if (k >= seq.length) { shown.textContent = ''; status.textContent = 'Repite la secuencia (' + seq.length + ' pasos).'; setPad(true); buttons[0].focus({ preventScroll: true }); return; }
+    status.textContent = 'Memoriza: paso ' + (k + 1) + ' de ' + seq.length + '.';
+    shown.textContent = ARROWS[seq[k]][1] + ' ' + ARROWS[seq[k]][0];
+    after(750, () => { shown.textContent = '·'; after(250, () => show(k + 1)); });
+  }
+  function start() { seq = Array.from({ length: cfg.mem }, () => randInt(4)); pos = 0; setPad(false); show(0); }
+  function press(i) {
+    if (i === seq[pos]) {
+      pos++;
+      if (pos === seq.length) win(); else status.textContent = 'Bien: ' + pos + ' de ' + seq.length + '.';
+    } else {
+      setPad(false); status.textContent = 'Fallaste. Nueva secuencia en un momento…';
+      after(1200, start);
+    }
+  }
+  start();
+}
+
+function miniReflex({ body, cfg, every, win }) {
+  const zone = h('div', { class: 'reflex-zone' }), mark = h('div', { class: 'reflex-mark' });
+  const bar = h('div', { class: 'reflex-bar', 'aria-hidden': 'true' }, zone, mark);
+  const info = h('p');
+  const status = h('p', { role: 'status', 'aria-live': 'polite' });
+  const stop = h('button', { type: 'button', class: 'btn primary', text: '¡Parar!' });
+  body.append(info, bar, h('p', { class: 'mini-pos' }, 'Marcador: ', h('span', { id: 'reflex-pos' }), ' %'), stop, status);
+  let pos = 0, dir = 1, hits = 0, lo = 0, hi = 0;
+  const speed = cfg.speed * (reducedMotion() ? 0.5 : 1);
+  function newZone() {
+    lo = randInt(100 - cfg.zone + 1); hi = lo + cfg.zone;
+    zone.style.left = lo + '%'; zone.style.width = cfg.zone + '%';
+    info.textContent = 'Para el marcador dentro de la zona: del ' + lo + ' % al ' + hi + ' %. Aciertos: ' + hits + ' de ' + cfg.hits + '.';
+  }
+  newZone();
+  every(30, () => {
+    pos += dir * speed;
+    if (pos >= 100) { pos = 100; dir = -1; } else if (pos <= 0) { pos = 0; dir = 1; }
+    mark.style.left = pos + '%';
+    const e = document.getElementById('reflex-pos'); if (e) e.textContent = String(Math.round(pos));
+  });
+  stop.addEventListener('click', () => {
+    if (pos >= lo && pos <= hi) {
+      hits++;
+      if (hits >= cfg.hits) { win(); return; }
+      status.textContent = '¡Bien! Aciertos: ' + hits + ' de ' + cfg.hits + '.';
+    } else { hits = 0; status.textContent = 'Fallaste (' + Math.round(pos) + ' %). Empiezas de nuevo.'; }
+    newZone();
+  });
+}
+
+function miniCalc({ body, cfg, after, every, win }) {
+  const q = h('p', { class: 'mini-big' });
+  const input = h('input', { type: 'text', inputmode: 'numeric', autocomplete: 'off', 'aria-label': 'Resultado' });
+  const check = h('button', { type: 'button', class: 'btn primary', text: 'Comprobar' });
+  const status = h('p', { role: 'status', 'aria-live': 'polite' });
+  const clock = h('p', { class: 'mini-pos' });
+  body.append(clock, q, input, check, status);
+  let list = [], idx = 0, left = cfg.calcSec;
+  const mk = () => {
+    const d = G.difficulty;
+    if (d === 'easy') { const a = 2 + randInt(14), b = 2 + randInt(14); return { t: a + ' + ' + b, r: a + b }; }
+    if (d === 'normal') {
+      const k = randInt(3);
+      if (k === 0) { const a = 10 + randInt(40), b = 10 + randInt(40); return { t: a + ' + ' + b, r: a + b }; }
+      if (k === 1) { const a = 20 + randInt(40), b = 5 + randInt(15); return { t: a + ' − ' + b, r: a - b }; }
+      const a = 2 + randInt(8), b = 2 + randInt(8); return { t: a + ' × ' + b, r: a * b };
+    }
+    const a = 3 + randInt(9), b = 3 + randInt(9), c = 5 + randInt(40);
+    return randInt(2) ? { t: a + ' × ' + b + ' + ' + c, r: a * b + c } : { t: a + ' × ' + b + ' − ' + Math.min(c, a * b - 1), r: a * b - Math.min(c, a * b - 1) };
+  };
+  function restart() {
+    list = Array.from({ length: cfg.ops }, mk); idx = 0; left = cfg.calcSec; input.value = ''; show();
+  }
+  function show() {
+    q.textContent = list[idx].t + ' = ?';
+    status.textContent = 'Operación ' + (idx + 1) + ' de ' + list.length + '.';
+  }
+  function tickClock() { clock.textContent = 'Tiempo: ' + left + ' s'; }
+  every(1000, () => {
+    left--;
+    if (left <= 0) { status.textContent = 'Se acabó el tiempo. Nueva serie.'; restart(); }
+    tickClock();
+  });
+  function submit() {
+    const v = parseInt(input.value.trim(), 10);
+    if (v === list[idx].r) {
+      idx++; input.value = '';
+      if (idx >= list.length) { win(); return; }
+      show();
+    } else { status.textContent = 'Incorrecto, prueba otra vez.'; input.select(); }
+  }
+  check.addEventListener('click', submit);
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
+  restart(); tickClock();
+}
+
+function miniLock({ body, cfg, win }) {
+  const info = h('p');
+  const slider = h('input', { type: 'range', min: '0', max: '100', step: '1', value: '50', id: 'mini-slider', 'aria-label': 'Valor del deslizador' });
+  const read = h('p', { class: 'mini-pos' }, 'Valor actual: ', h('span', { id: 'mini-val' }, '50'));
+  const check = h('button', { type: 'button', class: 'btn primary', text: 'Comprobar' });
+  const status = h('p', { role: 'status', 'aria-live': 'polite' });
+  body.append(info, slider, read, check, status);
+  let done = 0, target = 0;
+  function next() {
+    target = 5 + randInt(91);
+    info.textContent = 'Ajusta el deslizador a ' + target + ' (margen ±' + cfg.tol + '). Cerraduras: ' + done + ' de ' + cfg.locks + '.';
+  }
+  slider.addEventListener('input', () => { document.getElementById('mini-val').textContent = slider.value; });
+  check.addEventListener('click', () => {
+    if (Math.abs(+slider.value - target) <= cfg.tol) {
+      done++;
+      if (done >= cfg.locks) { win(); return; }
+      status.textContent = '¡Bien! Siguiente cerradura.';
+    } else { done = 0; status.textContent = 'Fuera de margen (' + slider.value + '). Empiezas de nuevo.'; }
+    next();
+  });
+  next();
 }
 
 /* ===================== 11. ACCIONES DEL USUARIO Y ARRANQUE ===================== */
@@ -1248,7 +1455,8 @@ function sendAction(kind, a, b, text) {
 function sendAnswer() {
   const input = $('answer-input');
   const text = input.value.toUpperCase().replace(/[^A-Z]/g, '');
-  if (text.length !== 5) { toast('La respuesta debe tener 5 letras (A–Z, sin Ñ ni tildes).', 'bad'); return; }
+  const wl = DIFFICULTIES[G.difficulty].wordLen;
+  if (text.length !== wl) { toast('La respuesta debe tener ' + wl + ' letras (A–Z, sin Ñ ni tildes).', 'bad'); return; }
   sendAction('answer', 0, 0, text);
   input.value = '';
 }

@@ -40,17 +40,17 @@ La URL debe ser `wss://`. Otras opciones habituales: `wss://broker.hivemq.com:88
 
 Los roles se reparten de forma circular y **rotan en cada sala**, para que todos prueben papeles distintos. Con 2 jugadores, cada uno acumula varios roles.
 
-**1. Los diales.** Cuatro diales de símbolos; cada uno lo controla un jugador y solo su dueño ve el símbolo que muestra. Un jugador tiene el *Manual* (qué color exige cada dial) y otro la *Tabla* (qué símbolo corresponde a cada color). Para saber qué símbolo lleva cada dial hay que combinar ambos. Cualquiera puede *girar la llave*, que dice cuántos diales son correctos y gasta un giro.
+**1. Los diales.** Diales de símbolos (4 en Fácil, 7 en Normal, 10 en Difícil; el color que exige cada uno puede repetirse); cada uno lo controla un jugador y solo su dueño ve el símbolo que muestra. Un jugador tiene el *Manual* (qué color exige cada dial) y otro la *Tabla* (qué símbolo corresponde a cada color). Para saber qué símbolo lleva cada dial hay que combinar ambos. Cualquiera puede *girar la llave*, que dice cuántos diales son correctos y gasta un giro.
 
 **2. El laberinto ciego.** Un jugador mueve la ficha sin ver el mapa y solo sabe si avanzó o chocó. Otro ve el mapa (con colores en cada casilla, inicio y salida) pero no la ficha. El *Sensor de suelo* dice el color de la casilla actual y el *Radio de fila* dice la fila. Cada choque cuenta. En Normal y Difícil la ficha empieza en una casilla al azar y el mapa no marca el inicio: hay que deducirlo con el color del suelo, la fila y los resultados de los movimientos. En Fácil el inicio sí está marcado.
 
-**3. El cifrado.** Una palabra de 5 letras se cifra desplazando las letras hacia delante. Un jugador ve el *mensaje cifrado*, otro tiene el *símbolo clave*, otro la *rueda* que convierte cada símbolo en un número de desplazamiento y otro la *categoría* de la palabra. Cualquiera envía la respuesta; las erróneas dicen cuántas letras están en su sitio y gastan un intento.
+**3. El cifrado.** Una palabra (5, 7 o 10 letras según la dificultad) se cifra desplazando las letras hacia delante. Un jugador ve el *mensaje cifrado*, otro tiene el *símbolo clave*, otro la *rueda* que convierte cada símbolo en un número de desplazamiento y otro la *categoría* de la palabra. Cualquiera envía la respuesta; las erróneas dicen cuántas letras están en su sitio y gastan un intento.
 
 | Dificultad | Giros de llave | Choques | Respuestas erróneas | Laberinto | Extras |
 |---|---|---|---|---|---|
-| Fácil | 8 | 14 | 5 | 4×4, inicio marcado, 4 colores | Se indica cuántos aciertos hay |
-| Normal | 6 | 10 | 4 | 5×5, inicio oculto, 4 colores | 1 dial invertido, palabra posiblemente al revés, sin recuento de aciertos, −15 s por error |
-| Difícil | 5 | 7 | 3 | 6×6, inicio oculto, 3 colores | 2 diales invertidos, palabra posiblemente al revés, sin recuento de aciertos, −15 s por error |
+| Fácil | 8 | 14 | 5 | 4×4, inicio marcado, 4 colores | 4 diales, palabra de 5 letras, se indica cuántos aciertos hay |
+| Normal | 6 | 10 | 4 | 5×5, inicio oculto, 4 colores | 7 diales (2 invertidos), palabra de 7 letras posiblemente al revés, sin recuento de aciertos, −15 s por error |
+| Difícil | 5 | 7 | 3 | 6×6, inicio oculto, 3 colores | 10 diales (3 invertidos), palabra de 10 letras posiblemente al revés, sin recuento de aciertos, −15 s por error |
 
 En Normal y Difícil aparecen dos roles más: el *Interruptor de inversión* (diales cuyo símbolo correcto es el opuesto en el círculo de símbolos) y el *Sentido de lectura* (si la palabra descifrada hay que leerla al revés). Un error es un giro fallido, un choque o una respuesta incorrecta.
 
@@ -66,6 +66,19 @@ En Normal y Difícil aparecen dos roles más: el *Interruptor de inversión* (di
 | Saboteador: un jugador recibe un dato falso en cada sala y no lo sabe (3 o 4 jugadores) | no | sí |
 
 El saboteador se elige al azar en cada sala entre quienes tienen información corruptible. Con 2 jugadores se desactiva, porque nadie podría contrastar el dato. El anfitrión puede ser saboteador: su cliente recibe el dato falso como cualquier otro, y la verdad solo está en la memoria del anfitrión. El filtro de palabras del chat se aplica en el cliente (juego casual, no a prueba de trampas).
+
+### Microjuegos para desbloquear las pistas
+
+Cada pista privada (cada tarjeta amarilla con datos) empieza **bloqueada**. Para verla hay que superar un microjuego, que se asigna **al azar y por separado a cada pista**: *Memoria de flechas*, *Reflejos*, *Cálculo rápido* o *Cerradura de precisión*. Se juegan solo en tu navegador (no viajan por la red) y el tiempo de la partida no se detiene mientras juegas. Si fallas, se reinicia el microjuego.
+
+| | Fácil | Normal | Difícil |
+|---|---|---|---|
+| Memoria: pasos de la secuencia | 3 | 5 | 7 |
+| Reflejos: aciertos seguidos / ancho de la zona / velocidad | 1 / 30 % / lenta | 2 / 20 % / media | 3 / 12 % / rápida |
+| Cálculo: operaciones / tiempo | 3 sumas / 45 s | 4 mixtas / 35 s | 5 con multiplicación / 30 s |
+| Cerradura: ajustes seguidos / margen | 1 / ±6 | 2 / ±3 | 3 / ±1 |
+
+Son accesibles con teclado y no dependen del color. Con «reducir movimiento» activado en el sistema, el marcador de Reflejos va más despacio. En Difícil, la ocultación de la información privada (15 s visible) solo empieza a contar cuando ya has desbloqueado todas tus pistas, y vuelve a empezar cada vez que desbloqueas una. Los desbloqueos se pierden si recargas la página.
 
 Se gana al resolver las tres salas en 8 minutos. Se pierde al agotar el tiempo o los intentos de una sala.
 
