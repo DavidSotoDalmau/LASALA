@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>La sala de las hipótesis</title>
+  <meta name="description" content="Juego cooperativo de puzzles lógicos para 2 a 4 jugadores. Cada jugador tiene pistas privadas y el equipo debe comunicarlas.">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Saltar al contenido</a>
+  <div id="conn-banner" class="conn-banner" role="status" hidden></div>
+  <div id="toasts" class="toasts" role="status" aria-live="polite"></div>
+
+  <main id="main">
+
+    <!-- 1. INICIO -->
+    <section id="screen-home" class="screen" aria-labelledby="home-title">
+      <h1 id="home-title" class="game-title">La sala de las hipótesis</h1>
+      <p class="lead">
+        Cada jugador controla una parte del mecanismo y ve la sala de forma distinta.
+        Nadie puede resolverla solo: describid lo que veis y traducid entre todos.
+      </p>
+
+      <div class="card">
+        <label for="name-input">Tu nombre</label>
+        <input id="name-input" type="text" maxlength="16" autocomplete="nickname" spellcheck="false">
+
+        <div class="home-split">
+          <div class="home-block">
+            <h2>Nueva partida</h2>
+            <label for="difficulty">Dificultad (la elige quien crea la partida)</label>
+            <select id="difficulty">
+              <option value="easy">Fácil · 8 intentos</option>
+              <option value="normal" selected>Normal · 6 intentos</option>
+              <option value="hard">Difícil · 5 intentos</option>
+            </select>
+            <button id="btn-create" type="button" class="btn primary">Crear partida</button>
+          </div>
+
+          <div class="home-block">
+            <h2>Unirse a una partida</h2>
+            <label for="code-input">Código de partida</label>
+            <input id="code-input" type="text" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="Por ejemplo, K7M3QX">
+            <button id="btn-join" type="button" class="btn">Unirse</button>
+          </div>
+        </div>
+
+        <p id="home-error" class="msg error" role="alert" hidden></p>
+        <p id="home-status" class="msg info" role="status" hidden></p>
+      </div>
+
+      <details class="rules">
+        <summary>Cómo se juega</summary>
+        <ul>
+          <li>Son tres salas distintas: unos diales, un laberinto a ciegas y un mensaje cifrado.</li>
+          <li>Cada jugador controla una parte del mecanismo y ve una información diferente.</li>
+          <li>Nadie puede resolver nada solo: describid lo que veis y traducid entre todos.</li>
+          <li>No hay votaciones: actuad en tiempo real, pero ojo con los intentos y los choques.</li>
+          <li>Resolved las tres salas en 8 minutos para ganar.</li>
+        </ul>
+      </details>
+    </section>
+
+    <!-- 2. SALA DE ESPERA -->
+    <section id="screen-lobby" class="screen" hidden aria-labelledby="lobby-title">
+      <h2 id="lobby-title" class="screen-title">Sala de espera</h2>
+      <div class="card">
+        <p class="label-small">Código de partida</p>
+        <p id="lobby-code" class="big-code" aria-label="Código de partida">------</p>
+        <button id="btn-copy" type="button" class="btn">Copiar código</button>
+        <p class="muted">Comparte este código con quienes quieran jugar.</p>
+      </div>
+
+      <div class="card">
+        <h3>Jugadores</h3>
+        <p id="lobby-count" class="muted"></p>
+        <ul id="lobby-players" class="player-list"></ul>
+        <p id="lobby-difficulty" class="muted"></p>
+        <p id="lobby-msg" class="msg info" role="status"></p>
+        <div class="row">
+          <button id="btn-start" type="button" class="btn primary" hidden>Comenzar</button>
+          <button id="btn-leave-lobby" type="button" class="btn">Salir</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3. PARTIDA -->
+    <section id="screen-game" class="screen wide" hidden aria-labelledby="room-label">
+      <header class="game-bar">
+        <h2 id="room-label">Sala 1 de 3</h2>
+        <div class="timer-box">
+          <span class="label-small">Tiempo restante</span>
+          <span id="timer" class="timer" role="timer">08:00</span>
+          <span id="pause-flag" class="pause-flag" hidden>En pausa</span>
+        </div>
+        <p id="attempts-label" class="attempts">Intentos: 0 de 6</p>
+      </header>
+      <p id="game-status" class="msg info" role="status" hidden></p>
+
+      <div class="game-grid">
+        <div class="col">
+          <section class="card" aria-labelledby="mech-title">
+            <h3 id="mech-title">Mecanismo</h3>
+            <p id="room-intro" class="muted"></p>
+            <div id="room-area"></div>
+            <div id="answer-box" class="answer-box" hidden>
+              <label for="answer-input">Respuesta (palabra de 5 letras)</label>
+              <div class="chat-send">
+                <input id="answer-input" type="text" maxlength="5" autocomplete="off" autocapitalize="characters" spellcheck="false">
+                <button id="btn-answer" type="button" class="btn primary">Enviar respuesta</button>
+              </div>
+            </div>
+          </section>
+
+          <section class="card" aria-labelledby="log-title">
+            <h3 id="log-title">Registro del equipo</h3>
+            <ol id="log-list" class="log"></ol>
+          </section>
+        </div>
+
+        <div class="col">
+          <section class="card clue-card" aria-labelledby="clues-title">
+            <div class="card-head">
+              <h3 id="clues-title">Tu información privada</h3>
+              <button id="btn-toggle-clues" type="button" class="btn small" aria-expanded="true" aria-controls="private-area">Ocultar información</button>
+            </div>
+            <p class="muted">Solo tú ves esto. Descríbelo al equipo con tus palabras.</p>
+            <ul id="private-area" class="tags"></ul>
+          </section>
+
+          <section class="card" aria-labelledby="chat-title">
+            <h3 id="chat-title">Chat del equipo</h3>
+            <ol id="chat-log" class="chat-log" role="log" aria-live="polite" tabindex="0" aria-label="Mensajes del chat"></ol>
+            <div class="chat-send">
+              <label for="chat-input" class="sr-only">Mensaje</label>
+              <input id="chat-input" type="text" maxlength="200" autocomplete="off" placeholder="Escribe tu mensaje">
+              <button id="btn-chat-send" type="button" class="btn">Enviar</button>
+            </div>
+          </section>
+
+          <section class="card" aria-labelledby="players-title">
+            <h3 id="players-title">Jugadores y roles</h3>
+            <ul id="game-players" class="player-list"></ul>
+            <button id="btn-leave-game" type="button" class="btn danger">Salir de la partida</button>
+          </section>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4. RESULTADO -->
+    <section id="screen-result" class="screen" hidden aria-labelledby="result-title">
+      <div class="card result-card">
+        <h2 id="result-title" class="game-title small">Resultado</h2>
+        <p id="result-reason" class="lead"></p>
+        <dl class="result-stats">
+          <div><dt>Salas resueltas</dt><dd id="result-rooms">0 de 3</dd></div>
+          <div><dt>Tiempo restante</dt><dd id="result-time">00:00</dd></div>
+        </dl>
+        <button id="btn-back-home" type="button" class="btn primary">Volver al inicio</button>
+      </div>
+    </section>
+  </main>
+
+  <noscript><p class="msg error">Este juego necesita JavaScript.</p></noscript>
+
+  <script src="https://cdn.jsdelivr.net/npm/mqtt@5.10.1/dist/mqtt.min.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>
