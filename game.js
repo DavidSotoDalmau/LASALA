@@ -39,9 +39,9 @@ const SESSION_KEY = 'hypothesis-session-v2';
 
 // keys: giros de llave (sala 1). bumps: choques permitidos (sala 2). tries: respuestas erróneas (sala 3).
 const DIFFICULTIES = {
-  easy:   { label: 'Fácil',   keys: 8, bumps: 14, tries: 5, maze: 4 },
-  normal: { label: 'Normal',  keys: 6, bumps: 10, tries: 4, maze: 5 },
-  hard:   { label: 'Difícil', keys: 5, bumps: 7,  tries: 3, maze: 6 }
+  easy:   { label: 'Fácil',   keys: 8, bumps: 14, tries: 5, maze: 4, hideStart: false, colors: 4, invert: 0, reverse: false, showCount: true,  penaltyMs: 0 },
+  normal: { label: 'Normal',  keys: 6, bumps: 10, tries: 4, maze: 5, hideStart: true,  colors: 4, invert: 1, reverse: true,  showCount: false, penaltyMs: 15000 },
+  hard:   { label: 'Difícil', keys: 5, bumps: 7,  tries: 3, maze: 6, hideStart: true,  colors: 3, invert: 2, reverse: true,  showCount: false, penaltyMs: 15000 }
 };
 
 const SYMBOLS = [
@@ -68,8 +68,8 @@ const colorById = id => COLORS.find(c => c.id === id);
 const ROOM_TYPES = ['dials', 'maze', 'cipher'];
 const ROOM_TITLES = { dials: 'Los diales', maze: 'El laberinto ciego', cipher: 'El cifrado' };
 const ROOM_INTROS = {
-  dials: 'Cada dial lo controla un jugador, y solo su dueño ve el símbolo que muestra. Descubrid qué símbolo debe llevar cada dial y luego girad la llave. La llave solo dice cuántos diales están bien.',
-  maze: 'Una persona mueve la ficha sin ver el mapa; otra ve el mapa pero no la ficha. Guiaos con el color del suelo y la fila para encontrar la salida. Cada choque contra un muro cuenta.',
+  dials: 'Cada dial lo controla un jugador, y solo su dueño ve el símbolo que muestra. Descubrid qué símbolo debe llevar cada dial y luego girad la llave.',
+  maze: 'Una persona mueve la ficha sin ver el mapa; otra ve el mapa pero no la ficha. Guiaos con el color del suelo y la fila para encontrar la salida. Cada choque contra un muro cuenta. En Normal y Difícil el mapa no marca el inicio: hay que deducirlo.',
   cipher: 'El mensaje cifrado desplaza cada letra hacia delante en el alfabeto de 26 letras (A–Z, sin Ñ). Hay que averiguar cuántos puestos y retroceder. Enviad la palabra de 5 letras.'
 };
 const COUNTER_LABELS = { dials: 'Giros de llave', maze: 'Choques', cipher: 'Respuestas erróneas' };
@@ -79,11 +79,11 @@ const ROLE_LISTS = {
   cipher: ['texto', 'clave', 'tabla', 'categoria']
 };
 const ROLE_NAMES = {
-  dials: { manual: 'Manual de la cerradura', tabla: 'Tabla de colores' },
+  dials: { manual: 'Manual de la cerradura', tabla: 'Tabla de colores', regla: 'Interruptor de inversión' },
   maze: { mapa: 'Mapa del laberinto', mover: 'Mover la ficha', suelo: 'Sensor de suelo', fila: 'Radio de fila' },
-  cipher: { texto: 'Mensaje cifrado', clave: 'Símbolo clave', tabla: 'Rueda de desplazamientos', categoria: 'Categoría' }
+  cipher: { texto: 'Mensaje cifrado', clave: 'Símbolo clave', tabla: 'Rueda de desplazamientos', categoria: 'Categoría', orden: 'Sentido de lectura' }
 };
-const ALL_ROLES = ['manual', 'tabla', 'mapa', 'mover', 'suelo', 'fila', 'texto', 'clave', 'categoria'];
+const ALL_ROLES = ['manual', 'tabla', 'regla', 'mapa', 'mover', 'suelo', 'fila', 'texto', 'clave', 'categoria', 'orden'];
 const DIRS = [
   { name: 'Norte', cls: 'n', dr: -1, dc: 0, bit: 1 },
   { name: 'Este',  cls: 'e', dr: 0,  dc: 1, bit: 2 },
@@ -130,33 +130,42 @@ function formatTime(ms) {
 /* ============ 3. SALAS: ROLES Y GENERADORES (solo los usa el anfitrión) ============ */
 
 // Reparto de roles determinista: lo calculan igual el anfitrión y los clientes a partir de `order`.
+// Lista de roles de cada sala según la dificultad (Normal y Difícil añaden roles).
+function roleList(type) {
+  const d = DIFFICULTIES[G.difficulty] || DIFFICULTIES.normal;
+  if (type === 'dials') return d.invert ? ROLE_LISTS.dials.concat('regla') : ROLE_LISTS.dials;
+  if (type === 'cipher') return d.reverse ? ROLE_LISTS.cipher.concat('orden') : ROLE_LISTS.cipher;
+  return ROLE_LISTS[type];
+}
 function roleHolder(type, role, order, room) {
-  const k = ROLE_LISTS[type].indexOf(role);
+  const k = roleList(type).indexOf(role);
   return order[(room + k) % order.length];
 }
 function dialOwner(i, order, room) { return order[(i + room) % order.length]; }
 function rolesOf(type, order, room, id) {
-  return ROLE_LISTS[type].filter(r => roleHolder(type, r, order, room) === id);
+  return roleList(type).filter(r => roleHolder(type, r, order, room) === id);
 }
 
 // Sala 1: manual (dial -> color) + tabla (color -> símbolo) => símbolo correcto de cada dial.
-function genDials() {
+function genDials(cfg) {
   const tableSyms = shuffle([0, 1, 2, 3, 4, 5]);               // color i -> símbolo tableSyms[i]
   const dialColors = shuffle([0, 1, 2, 3, 4, 5]).slice(0, 4);  // color que exige cada dial
-  const solution = dialColors.map(c => tableSyms[c]);
+  const inverted = shuffle([0, 1, 2, 3]).slice(0, cfg.invert).sort();  // diales invertidos: símbolo opuesto (+3 en el círculo)
+  const solution = dialColors.map((c, i) => inverted.includes(i) ? (tableSyms[c] + 3) % 6 : tableSyms[c]);
   let dials;
   do { dials = solution.map(() => randInt(6)); } while (dials.some((v, i) => v === solution[i]));
   return {
     solution, dials,
     views: {
       manual: dialColors.map(c => COLORS[c].id),
-      tabla: COLORS.flatMap((c, i) => [c.id, SYMBOLS[tableSyms[i]].id])
+      tabla: COLORS.flatMap((c, i) => [c.id, SYMBOLS[tableSyms[i]].id]),
+      regla: inverted.map(i => String(i + 1))
     }
   };
 }
 
 // Sala 2: laberinto perfecto n×n (DFS). Muros por bits: N=1, E=2, S=4, O=8.
-function genMaze(n) {
+function genMaze(n, randomStart, ncolors) {
   const walls = new Array(n * n).fill(15);
   const seen = new Array(n * n).fill(false);
   const carve = [[-1, 0, 1, 4], [0, 1, 2, 8], [1, 0, 4, 1], [0, -1, 8, 2]];
@@ -173,8 +182,9 @@ function genMaze(n) {
     walls[cur] &= ~b1; walls[nx] &= ~b2; seen[nx] = true; stack.push(nx);
   }
   // Salida: la casilla más lejana desde el inicio (BFS).
-  const dist = new Array(n * n).fill(-1); dist[0] = 0;
-  const queue = [0]; let far = 0;
+  const start = randomStart ? randInt(n * n) : 0;
+  const dist = new Array(n * n).fill(-1); dist[start] = 0;
+  const queue = [start]; let far = start;
   while (queue.length) {
     const cur = queue.shift(), r = Math.floor(cur / n), c = cur % n;
     DIRS.forEach(d => {
@@ -183,11 +193,12 @@ function genMaze(n) {
       if (dist[nx] === -1) { dist[nx] = dist[cur] + 1; queue.push(nx); if (dist[nx] > dist[far]) far = nx; }
     });
   }
-  const colors = walls.map(() => randInt(4));
-  return { n, walls, colors, pos: 0, exit: far };
+  const colors = walls.map(() => randInt(ncolors || 4));
+  return { n, walls, colors, pos: start, exit: far };
 }
-function mazeViews(m) {
-  const mapData = [String(m.n), String(m.n), '0', '0', String(Math.floor(m.exit / m.n)), String(m.exit % m.n)];
+function mazeViews(m, hideStart) {
+  const sr = hideStart ? -1 : Math.floor(m.pos / m.n), sc = hideStart ? -1 : m.pos % m.n;
+  const mapData = [String(m.n), String(m.n), String(sr), String(sc), String(Math.floor(m.exit / m.n)), String(m.exit % m.n)];
   m.walls.forEach((w, i) => mapData.push(w + ':' + m.colors[i]));
   return {
     mapa: mapData, mover: [],
@@ -197,16 +208,18 @@ function mazeViews(m) {
 }
 
 // Sala 3: César con desplazamiento dado por un símbolo clave; rueda símbolo -> número.
-function genCipher() {
+function genCipher(cfg) {
   const [word, cat] = WORDS[randInt(WORDS.length)];
   const shifts = shuffle([1, 2, 3, 4, 5, 6, 7, 8, 9]).slice(0, 6);
   const keyIdx = randInt(6);
   const shift = shifts[keyIdx];
-  const enc = word.split('').map(ch => String.fromCharCode(65 + (ch.charCodeAt(0) - 65 + shift) % 26)).join('');
+  const rev = cfg.reverse && randInt(2) === 1;
+  const base = rev ? word.split('').reverse().join('') : word;
+  const enc = base.split('').map(ch => String.fromCharCode(65 + (ch.charCodeAt(0) - 65 + shift) % 26)).join('');
   return {
     word,
     views: {
-      texto: [enc], clave: [SYMBOLS[keyIdx].id], categoria: [cat],
+      texto: [enc], clave: [SYMBOLS[keyIdx].id], categoria: [cat], orden: [rev ? 'alreves' : 'derecho'],
       tabla: SYMBOLS.flatMap((s, i) => [s.id, String(shifts[i])])
     }
   };
@@ -238,7 +251,7 @@ const TYPES = {
     Array.isArray(p.data) && p.data.length <= 64 && p.data.every(x => isStr(x, 0, 12)) },
   ROOM_START: { qos: 1, validate: p => keysAre(p, ['room', 'max', 'order', 'remainingMs', 'dials']) && isInt(p.room, 0, TOTAL_ROOMS - 1) && isInt(p.max, 1, 30) && isOrder(p.order) && isInt(p.remainingMs, 0, GAME_MS) && isDials(p.dials) },
   ACTION: { qos: 1, validate: p => keysAre(p, ['kind', 'a', 'b', 'text']) && ['dial', 'key', 'move', 'answer'].includes(p.kind) && isInt(p.a, -1, 9) && isInt(p.b, -1, 9) && isStr(p.text, 0, 5) && /^[A-Z]*$/.test(p.text) },
-  ROOM_UPDATE: { qos: 1, validate: p => keysAre(p, ['room', 'event', 'by', 'a', 'b', 'used', 'max']) && isInt(p.room, 0, TOTAL_ROOMS - 1) && UPDATE_EVENTS.includes(p.event) && isId(p.by) && isInt(p.a, -1, 99) && isInt(p.b, -1, 99) && isInt(p.used, 0, 99) && isInt(p.max, 1, 30) },
+  ROOM_UPDATE: { qos: 1, validate: p => keysAre(p, ['room', 'event', 'by', 'a', 'b', 'used', 'max', 'remainingMs']) && isInt(p.remainingMs, 0, GAME_MS) && isInt(p.room, 0, TOTAL_ROOMS - 1) && UPDATE_EVENTS.includes(p.event) && isId(p.by) && isInt(p.a, -1, 99) && isInt(p.b, -1, 99) && isInt(p.used, 0, 99) && isInt(p.max, 1, 30) },
   ROOM_SOLVED: { qos: 1, validate: p => keysAre(p, ['room', 'roomsSolved', 'remainingMs']) && isInt(p.room, 0, TOTAL_ROOMS - 1) && isInt(p.roomsSolved, 1, TOTAL_ROOMS) && isInt(p.remainingMs, 0, GAME_MS) },
   GAME_OVER: { qos: 1, validate: p => keysAre(p, ['won', 'reason', 'roomsSolved', 'remainingMs']) && isBool(p.won) && ['solved', 'time', 'attempts', 'host_lost'].includes(p.reason) && isInt(p.roomsSolved, 0, TOTAL_ROOMS) && isInt(p.remainingMs, 0, GAME_MS) },
   CHAT_MESSAGE: { qos: 0, validate: p => keysAre(p, ['text']) && isStr(p.text, 1, 200) },
@@ -482,14 +495,21 @@ const handlers = {
   ROOM_UPDATE(msg) {
     const p = msg.payload;
     if (p.room !== G.roomIndex) return;
-    G.used = p.used; G.max = p.max;
-    const who = nameOf(p.by);
+    G.used = p.used; G.max = p.max; G.remainingMs = p.remainingMs;
+    const who = nameOf(p.by), pen = DIFFICULTIES[G.difficulty].penaltyMs;
+    const penTxt = pen ? ' (−' + (pen / 1000) + ' s)' : '';
     switch (p.event) {
       case 'dial': G.dials[p.a] = p.b; break;
-      case 'key': G.last = { event: 'key', a: p.a }; addLog(who + ' giró la llave: ' + p.a + ' de 4 diales correctos.'); break;
+      case 'key':
+        G.last = { event: 'key', a: p.a };
+        addLog(who + ' giró la llave: ' + (p.a === 4 ? '¡se abre!' : p.a < 0 ? 'no se abre' + penTxt + '.' : p.a + ' de 4 diales correctos' + penTxt + '.'));
+        break;
       case 'move_ok': G.last = { event: 'move_ok', a: 0 }; addLog(who + ' movió la ficha: avanzó.'); break;
-      case 'bump': G.last = { event: 'bump', a: 0 }; addLog(who + ' movió la ficha: chocó contra un muro.'); break;
-      case 'answer_wrong': G.last = { event: 'answer_wrong', a: p.a }; addLog(who + ' propuso una palabra: ' + p.a + ' de 5 letras en su sitio.'); break;
+      case 'bump': G.last = { event: 'bump', a: 0 }; addLog(who + ' movió la ficha: chocó contra un muro' + penTxt + '.'); break;
+      case 'answer_wrong':
+        G.last = { event: 'answer_wrong', a: p.a };
+        addLog(who + ' propuso una palabra: ' + (p.a === 5 ? '¡correcta!' : p.a < 0 ? 'incorrecta' + penTxt + '.' : p.a + ' de 5 letras en su sitio' + penTxt + '.'));
+        break;
     }
   },
 
@@ -626,7 +646,7 @@ function hostSendRejected(id, reason) {
 
 function hostSendViews(id) {
   if (!amHost() || !H || !H.type || H.ending) return;
-  ROLE_LISTS[H.type].forEach(role => {
+  roleList(H.type).forEach(role => {
     if (roleHolder(H.type, role, H.order, H.roomIndex) === id && H.views[role]) {
       send('PRIVATE_VIEW', { room: H.roomIndex, role, data: H.views[role] }, { topic: topicPrivate(net.roomCode, id) });
     }
@@ -656,12 +676,12 @@ function hostBeginRoom(idx) {
   H.type = type; H.roomIndex = idx; H.order = connectedPlayers().map(p => p.id);
   H.used = 0; H.locked = false; H.actTimes = {}; H.dials = [0, 0, 0, 0];
   if (type === 'dials') {
-    const d = genDials();
+    const d = genDials(cfg);
     H.solution = d.solution; H.dials = d.dials.slice(); H.views = d.views; H.max = cfg.keys;
   } else if (type === 'maze') {
-    H.maze = genMaze(cfg.maze); H.views = mazeViews(H.maze); H.max = cfg.bumps;
+    H.maze = genMaze(cfg.maze, cfg.hideStart, cfg.colors); H.views = mazeViews(H.maze, cfg.hideStart); H.max = cfg.bumps;
   } else {
-    const c = genCipher();
+    const c = genCipher(cfg);
     H.word = c.word; H.views = c.views; H.max = cfg.tries;
   }
   H.order.forEach(hostSendViews);
@@ -682,7 +702,7 @@ function hostReassignOrder(leftId) {
 }
 
 function hostUpdate(event, by, a, b) {
-  send('ROOM_UPDATE', { room: H.roomIndex, event, by, a, b, used: H.used, max: H.max });
+  send('ROOM_UPDATE', { room: H.roomIndex, event, by, a, b, used: H.used, max: H.max, remainingMs: Math.max(0, Math.round(G.remainingMs)) });
 }
 
 function hostOnAction(msg) {
@@ -702,8 +722,8 @@ function hostOnAction(msg) {
       hostUpdate('dial', by, a.a, H.dials[a.a]);
     } else if (a.kind === 'key') {
       const correct = H.dials.filter((v, i) => v === H.solution[i]).length;
-      if (correct < 4) H.used++;
-      hostUpdate('key', by, correct, 0);
+      if (correct < 4) hostPenalty();
+      hostUpdate('key', by, correct === 4 ? 4 : (DIFFICULTIES[G.difficulty].showCount ? correct : -1), 0);
       if (correct === 4) hostSolved();
       else if (H.used >= H.max) hostEndGame('attempts');
     }
@@ -712,7 +732,7 @@ function hostOnAction(msg) {
     if (roleHolder('maze', 'mover', H.order, H.roomIndex) !== by) return;
     const m = H.maze, d = DIRS[a.a];
     if (m.walls[m.pos] & d.bit) {
-      H.used++;
+      hostPenalty();
       hostUpdate('bump', by, 0, 0);
       if (H.used >= H.max) hostEndGame('attempts');
     } else {
@@ -727,10 +747,16 @@ function hostOnAction(msg) {
     if (a.kind !== 'answer' || !/^[A-Z]{5}$/.test(a.text)) return;
     const correct = a.text.split('').filter((ch, i) => ch === H.word[i]).length;
     if (correct === 5) { hostUpdate('answer_wrong', by, 5, 0); hostSolved(); return; }
-    H.used++;
-    hostUpdate('answer_wrong', by, correct, 0);
+    hostPenalty();
+    hostUpdate('answer_wrong', by, DIFFICULTIES[G.difficulty].showCount ? correct : -1, 0);
     if (H.used >= H.max) hostEndGame('attempts');
   }
+}
+
+// Cada error gasta un intento y, en Normal y Difícil, resta tiempo.
+function hostPenalty() {
+  H.used++;
+  G.remainingMs = Math.max(0, G.remainingMs - DIFFICULTIES[G.difficulty].penaltyMs);
 }
 
 function hostSolved() {
@@ -914,7 +940,7 @@ const colorChip = id => { const c = colorById(id); return c ? h('span', null, h(
 const waiting = () => h('p', { class: 'muted', text: 'Esperando datos del anfitrión…' });
 
 function mazeMap(d) {
-  const rows = +d[0], cols = +d[1], er = +d[4], ec = +d[5];
+  const rows = +d[0], cols = +d[1], sr = +d[2], sc = +d[3], er = +d[4], ec = +d[5];
   if (!(rows > 0 && cols > 0) || d.length < 6 + rows * cols) return waiting();
   const grid = h('div', { class: 'mz', style: 'grid-template-columns:repeat(' + cols + ',1fr)', role: 'img',
     'aria-label': 'Mapa del laberinto de ' + rows + ' por ' + cols + ' casillas. Norte arriba.' });
@@ -923,11 +949,11 @@ function mazeMap(d) {
     const col = COLORS[ci] || COLORS[0];
     const r = Math.floor(i / cols), c = i % cols;
     const cls = ['mz-cell', (w & 1) ? 'wn' : '', (w & 2) ? 'we' : '', (w & 4) ? 'ws' : '', (w & 8) ? 'wo' : ''].join(' ');
-    const mk = (r === 0 && c === 0) ? 'Inicio' : (r === er && c === ec) ? 'Salida' : '';
+    const mk = (r === sr && c === sc) ? 'Inicio' : (r === er && c === ec) ? 'Salida' : '';
     grid.append(h('div', { class: cls, style: '--c:' + col.hex }, h('span', { text: col.code }), mk ? h('span', { class: 'mk', text: mk }) : null));
   }
   return h('div', null, grid,
-    h('p', { class: 'legend', text: 'Norte arriba. Los trazos gruesos son muros. Colores: Roj = rojo, Azu = azul, Ver = verde, Amb = ámbar.' }));
+    h('p', { class: 'legend', text: 'Norte arriba. Los trazos gruesos son muros. Colores: Roj = rojo, Azu = azul, Ver = verde, Amb = ámbar.' + (sr < 0 ? ' Este mapa no marca el inicio: deducidlo con el suelo y la fila.' : '') }));
 }
 
 function roleBody(type, role) {
@@ -938,6 +964,9 @@ function roleBody(type, role) {
   const key = type + '/' + role;
   switch (key) {
     case 'dials/manual': return h('ul', { class: 'plain' }, d.map((c, i) => h('li', null, 'Dial ' + (i + 1) + ' → ', colorChip(c))));
+    case 'dials/regla': return h('p', { text: d.length
+      ? 'Los diales ' + d.join(' y ') + ' están invertidos: hay que poner el símbolo opuesto al que indique la tabla. El opuesto está 3 puestos más allá en este círculo: Sol, Luna, Estrella, Llave, Gota, Hoja (y vuelta a Sol).'
+      : 'Ningún dial está invertido.' });
     case 'dials/tabla': return h('ul', { class: 'plain' }, pairs().map(([c, s]) => h('li', null, colorChip(c), ' → ' + symLabel(s))));
     case 'maze/mapa': return mazeMap(d);
     case 'maze/suelo': return h('p', null, 'Estás pisando una casilla de color: ', colorChip(d[0]));
@@ -945,6 +974,7 @@ function roleBody(type, role) {
     case 'cipher/texto': return h('p', { class: 'big-word', text: d[0] });
     case 'cipher/clave': return h('p', { text: 'El símbolo clave es: ' + symLabel(d[0]) });
     case 'cipher/tabla': return h('ul', { class: 'plain' }, pairs().map(([s, n]) => h('li', { text: symLabel(s) + ' → desplazamiento ' + n })));
+    case 'cipher/orden': return h('p', { text: d[0] === 'alreves' ? 'Tras descifrar, la palabra original está escrita AL REVÉS: hay que leerla de derecha a izquierda.' : 'La palabra se lee en el orden normal, de izquierda a derecha.' });
     case 'cipher/categoria': return h('p', { text: 'La palabra es de la categoría: ' + d[0] });
     default: return waiting();
   }
@@ -990,7 +1020,7 @@ function renderRoomArea() {
       });
       return [h('div', { class: 'dial-grid' }, cards),
         h('button', { type: 'button', class: 'btn primary', disabled: paused, text: 'Girar la llave (' + (G.max - G.used) + ' giros restantes)', onclick: () => sendAction('key', 0, 0, '') }),
-        G.last && G.last.event === 'key' ? h('p', { class: 'result-line', text: 'Último giro: ' + G.last.a + ' de 4 diales correctos.' }) : h('p', { class: 'muted', text: 'Aún no habéis girado la llave.' })];
+        G.last && G.last.event === 'key' ? h('p', { class: 'result-line', text: G.last.a < 0 ? 'Último giro: la llave no se abre.' : 'Último giro: ' + G.last.a + ' de 4 diales correctos.' }) : h('p', { class: 'muted', text: 'Aún no habéis girado la llave.' })];
     }
     if (type === 'maze') {
       const last = G.last ? h('p', { class: 'result-line', text: G.last.event === 'bump' ? 'Último movimiento: chocó contra un muro.' : 'Último movimiento: avanzó.' }) : h('p', { class: 'muted', text: 'La ficha aún no se ha movido.' });
@@ -1001,7 +1031,7 @@ function renderRoomArea() {
       return [h('p', { text: 'Mueve la ficha ' + nameOf(mover) + '. Guiadle con lo que veis.' }), last];
     }
     return [h('p', { text: 'Descifrad el mensaje entre todos y escribid la palabra.' }),
-      G.last && G.last.event === 'answer_wrong' ? h('p', { class: 'result-line', text: 'Última respuesta: ' + G.last.a + ' de 5 letras en su sitio.' }) : h('p', { class: 'muted', text: 'Aún no habéis enviado ninguna respuesta.' })];
+      G.last && G.last.event === 'answer_wrong' ? h('p', { class: 'result-line', text: G.last.a < 0 ? 'Última respuesta: incorrecta.' : 'Última respuesta: ' + G.last.a + ' de 5 letras en su sitio.' }) : h('p', { class: 'muted', text: 'Aún no habéis enviado ninguna respuesta.' })];
   });
   $('btn-answer').disabled = paused;
 }
@@ -1010,7 +1040,9 @@ function renderGame() {
   const type = roomType();
   $('room-label').textContent = 'Sala ' + (G.roomIndex + 1) + ' de ' + TOTAL_ROOMS + ': ' + ROOM_TITLES[type];
   $('attempts-label').textContent = COUNTER_LABELS[type] + ': ' + G.used + ' de ' + G.max;
-  $('room-intro').textContent = ROOM_INTROS[type];
+  const dcfg = DIFFICULTIES[G.difficulty];
+  $('room-intro').textContent = ROOM_INTROS[type] + (dcfg.showCount || type === 'maze' ? '' : ' No se indica cuántos aciertos hay.') +
+    (dcfg.penaltyMs ? ' Cada error resta ' + (dcfg.penaltyMs / 1000) + ' segundos.' : '');
   const paused = isPaused();
   $('pause-flag').hidden = !paused;
   const st = $('game-status');

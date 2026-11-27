@@ -42,15 +42,17 @@ Los roles se reparten de forma circular y **rotan en cada sala**, para que todos
 
 **1. Los diales.** Cuatro diales de símbolos; cada uno lo controla un jugador y solo su dueño ve el símbolo que muestra. Un jugador tiene el *Manual* (qué color exige cada dial) y otro la *Tabla* (qué símbolo corresponde a cada color). Para saber qué símbolo lleva cada dial hay que combinar ambos. Cualquiera puede *girar la llave*, que dice cuántos diales son correctos y gasta un giro.
 
-**2. El laberinto ciego.** Un jugador mueve la ficha sin ver el mapa y solo sabe si avanzó o chocó. Otro ve el mapa (con colores en cada casilla, inicio y salida) pero no la ficha. El *Sensor de suelo* dice el color de la casilla actual y el *Radio de fila* dice la fila. Cada choque cuenta.
+**2. El laberinto ciego.** Un jugador mueve la ficha sin ver el mapa y solo sabe si avanzó o chocó. Otro ve el mapa (con colores en cada casilla, inicio y salida) pero no la ficha. El *Sensor de suelo* dice el color de la casilla actual y el *Radio de fila* dice la fila. Cada choque cuenta. En Normal y Difícil la ficha empieza en una casilla al azar y el mapa no marca el inicio: hay que deducirlo con el color del suelo, la fila y los resultados de los movimientos. En Fácil el inicio sí está marcado.
 
 **3. El cifrado.** Una palabra de 5 letras se cifra desplazando las letras hacia delante. Un jugador ve el *mensaje cifrado*, otro tiene el *símbolo clave*, otro la *rueda* que convierte cada símbolo en un número de desplazamiento y otro la *categoría* de la palabra. Cualquiera envía la respuesta; las erróneas dicen cuántas letras están en su sitio y gastan un intento.
 
-| Dificultad | Giros de llave | Choques | Respuestas erróneas | Laberinto |
-|---|---|---|---|---|
-| Fácil | 8 | 14 | 5 | 4×4 |
-| Normal | 6 | 10 | 4 | 5×5 |
-| Difícil | 5 | 7 | 3 | 6×6 |
+| Dificultad | Giros de llave | Choques | Respuestas erróneas | Laberinto | Extras |
+|---|---|---|---|---|---|
+| Fácil | 8 | 14 | 5 | 4×4, inicio marcado, 4 colores | Se indica cuántos aciertos hay |
+| Normal | 6 | 10 | 4 | 5×5, inicio oculto, 4 colores | 1 dial invertido, palabra posiblemente al revés, sin recuento de aciertos, −15 s por error |
+| Difícil | 5 | 7 | 3 | 6×6, inicio oculto, 3 colores | 2 diales invertidos, palabra posiblemente al revés, sin recuento de aciertos, −15 s por error |
+
+En Normal y Difícil aparecen dos roles más: el *Interruptor de inversión* (diales cuyo símbolo correcto es el opuesto en el círculo de símbolos) y el *Sentido de lectura* (si la palabra descifrada hay que leerla al revés). Un error es un giro fallido, un choque o una respuesta incorrecta.
 
 Se gana al resolver las tres salas en 8 minutos. Se pierde al agotar el tiempo o los intentos de una sala.
 
